@@ -1,0 +1,7 @@
+{
+  "name": "FarmConnect: Smart Agriculture Platform",
+  "description": "An integrated digital platform that empowers Nigerian farmers with AI-powered crop health monitoring and direct market access. This MVP focuses on the AI Crop Health Scanner.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

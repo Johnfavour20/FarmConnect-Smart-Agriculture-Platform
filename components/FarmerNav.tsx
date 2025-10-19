@@ -1,0 +1,95 @@
+
+import React from 'react';
+import { DashboardIcon, UsersIcon, CameraIcon, UserCircleIcon, QuestionMarkCircleIcon, BookOpenIcon } from './IconComponents';
+
+type FarmerViewMode = 'dashboard' | 'community' | 'scanner' | 'diagnosis' | 'listingForm' | 'chat' | 'editListing' | 'profile' | 'agronomist' | 'learningHub';
+
+interface FarmerNavProps {
+    activeView: FarmerViewMode;
+    onNavigate: (view: 'dashboard' | 'community' | 'scanner' | 'profile' | 'agronomist' | 'learningHub') => void;
+}
+
+const NavButton: React.FC<{
+    label: string;
+    icon: React.ReactNode;
+    isActive: boolean;
+    onClick: () => void;
+}> = ({ label, icon, isActive, onClick }) => (
+    <button
+        onClick={onClick}
+        className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-lg transition-colors text-sm font-medium ${
+            isActive
+                ? 'bg-green-100 text-green-700'
+                : 'text-slate-500 hover:bg-slate-100'
+        }`}
+        aria-current={isActive ? 'page' : undefined}
+    >
+        {icon}
+        <span>{label}</span>
+    </button>
+);
+
+const viewTitles: { [key in FarmerViewMode]?: string } = {
+    dashboard: 'My Dashboard',
+    community: 'Community Feed',
+    scanner: 'AI Crop Scanner',
+    profile: 'My Profile',
+    agronomist: 'Ask an Agronomist',
+    diagnosis: 'Diagnosis Report',
+    listingForm: 'Create Listing',
+    editListing: 'Edit Listing',
+    chat: 'Conversation',
+    learningHub: 'Learning Hub'
+};
+
+export const FarmerNav: React.FC<FarmerNavProps> = ({ activeView, onNavigate }) => {
+    const mainViews: FarmerViewMode[] = ['dashboard', 'community', 'agronomist', 'scanner', 'learningHub', 'profile'];
+    const mainActiveView = mainViews.includes(activeView) ? activeView : 'dashboard';
+
+    return (
+        <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-200">
+            <h2 className="text-xl sm:text-2xl font-bold text-green-800 mb-4 text-center">
+                {viewTitles[activeView] || 'FarmConnect'}
+            </h2>
+
+            <div className="flex items-center justify-around gap-2 bg-slate-100/70 p-1 rounded-xl">
+                 <NavButton
+                    label="Dashboard"
+                    icon={<DashboardIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'dashboard'}
+                    onClick={() => onNavigate('dashboard')}
+                 />
+                 <NavButton
+                    label="Community"
+                    icon={<UsersIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'community'}
+                    onClick={() => onNavigate('community')}
+                 />
+                 <NavButton
+                    label="Learn"
+                    icon={<BookOpenIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'learningHub'}
+                    onClick={() => onNavigate('learningHub')}
+                 />
+                 <NavButton
+                    label="Ask"
+                    icon={<QuestionMarkCircleIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'agronomist'}
+                    onClick={() => onNavigate('agronomist')}
+                 />
+                 <NavButton
+                    label="Scanner"
+                    icon={<CameraIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'scanner'}
+                    onClick={() => onNavigate('scanner')}
+                 />
+                 <NavButton
+                    label="Profile"
+                    icon={<UserCircleIcon className="h-5 w-5" />}
+                    isActive={mainActiveView === 'profile'}
+                    onClick={() => onNavigate('profile')}
+                 />
+            </div>
+        </div>
+    );
+};
