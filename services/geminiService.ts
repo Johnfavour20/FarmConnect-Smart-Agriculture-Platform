@@ -1,5 +1,8 @@
-import { GoogleGenAI, Type, Chat } from "@google/genai";
-import type { Diagnosis, Listing, ChatMessage, CopilotMessageContent, DailyForecast, WeatherAdvice, FarmerProfile, Reminder, Post, TutorialCategory, GrowthPlanTask, Transaction } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+// FIX: Added 'Post' to the type import to resolve a 'Cannot find name' error.
+import type { Diagnosis, ChatMessage, Listing, FarmerProfile, WeatherAdvice, Reminder, GrowthPlanTask, CopilotMessageContent, Transaction, Post } from '../types';
+
+// --- Helper Functions ---
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -12,616 +15,261 @@ const fileToGenerativePart = async (file: File) => {
   };
 };
 
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+const textModel = 'gemini-2.5-flash';
+const proModel = 'gemini-2.5-pro';
+const visionModel = 'gemini-2.5-flash'; // Flash is generally good for vision tasks
+
+// --- Service Functions ---
+
+const diagnosisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        cropType: { type: Type.STRING, description: "The type of crop identified, e.g., 'Tomato', 'Maize'." },
+        diseaseName: { type: Type.STRING, description: "The common name of the disease or 'Healthy' if no disease is found." },
+        confidenceScore: { type: Type.STRING, description: "A percentage value indicating confidence, e.g., '95%'." },
+        severity: { type: Type.STRING, description: "Severity of the disease.", enum: ['Low', 'Medium', 'High', 'N/A'] },
+        recommendedTreatment: { type: Type.STRING, description: "A detailed, actionable treatment plan. Use markdown for formatting." },
+        preventiveTips: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of 3-5 concise preventive tips." },
+    },
+    required: ['cropType', 'diseaseName', 'confidenceScore', 'severity', 'recommendedTreatment', 'preventiveTips']
+};
+
+
 export const diagnoseCrop = async (imageFile: File): Promise<Diagnosis> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
     const imagePart = await fileToGenerativePart(imageFile);
+    const result = await ai.models.generateContent({
+        model: visionModel,
+        contents: {
+            parts: [
+                { text: "Analyze this image of a crop. Identify the crop type and any diseases. Provide a detailed diagnosis. If the crop is healthy, say so and provide general care tips instead of a treatment plan. Structure your response according to the provided JSON schema." },
+                imagePart
+            ]
+        },
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: diagnosisSchema,
+        }
+    });
 
-    const prompt = `You are an expert agronomist specializing in common crop diseases in Nigeria. Your goal is to provide a clear, concise, and helpful diagnosis based on an image of a plant.
-    Analyze the attached image of a crop. Identify the crop type and any diseases, pests, or nutrient deficiencies. 
-    Provide the following information in a structured JSON format. The response MUST be only the JSON object.
-    - cropType: The type of the crop shown in the image. Choose from: 'Cassava', 'Maize', 'Tomato', 'Yam'. If you cannot determine the crop or it's another type, return 'Other Crop'.
-    - diseaseName: The common name of the disease or pest. If the plant is healthy, return 'Healthy'.
-    - confidenceScore: Your confidence in this diagnosis as a percentage string, e.g., '95%'.
-    - severity: The severity of the issue, one of 'Low', 'Medium', 'High'. If healthy, return 'N/A'.
-    - recommendedTreatment: A step-by-step guide for treatment. Use simple, actionable language. If healthy, provide general care tips for the identified crop.
-    - preventiveTips: A list of bullet points for preventive measures relevant to the identified crop.
-    `;
-
+    const jsonString = result.text.trim();
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [imagePart, { text: prompt }] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        cropType: { type: Type.STRING, description: "The type of crop, e.g., 'Cassava', 'Maize', 'Tomato', 'Yam', or 'Other Crop'." },
-                        diseaseName: { type: Type.STRING, description: "Name of the disease, pest, or 'Healthy'." },
-                        confidenceScore: { type: Type.STRING, description: "Confidence of the diagnosis, e.g., '95%'." },
-                        severity: { type: Type.STRING, description: "Severity level: 'Low', 'Medium', 'High', or 'N/A'." },
-                        recommendedTreatment: { type: Type.STRING, description: "Step-by-step treatment advice or general care tips." },
-                        preventiveTips: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of preventive measures." }
-                    },
-                    required: ["cropType", "diseaseName", "confidenceScore", "severity", "recommendedTreatment", "preventiveTips"]
-                }
-            }
-        });
-
-        const jsonText = response.text.trim();
-        const result = JSON.parse(jsonText);
-        return result as Diagnosis;
-
+        return JSON.parse(jsonString) as Diagnosis;
     } catch (e) {
-        console.error("Error calling Gemini API:", e);
-        throw new Error("Failed to get a diagnosis from the AI. The model may be overloaded or the image could not be processed. Please try again.");
+        console.error("Failed to parse diagnosis JSON:", jsonString);
+        throw new Error("Received an invalid format from the AI for diagnosis.");
     }
 };
 
-export const askAgronomist = async (prompt: string, imageFile: File | null): Promise<string> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const continueChat = async (history: ChatMessage[], newMessage: string): Promise<string> => {
+    const chat = ai.chats.create({
+        model: textModel,
+        history: history.map(msg => ({
+            role: msg.role,
+            parts: [{ text: msg.content }]
+        }))
+    });
     
-    const systemInstruction = "You are an expert agronomist and agricultural advisor specializing in Nigeria. A farmer is asking you for advice. Provide clear, practical, and actionable information. If an image is provided, use it as the primary context for your answer. Your response should be comprehensive and helpful to a farmer with local knowledge.";
-
-    const textPart = { text: prompt };
-    let contents;
-
-    if (imageFile) {
-        const imagePart = await fileToGenerativePart(imageFile);
-        contents = { parts: [imagePart, textPart] };
-    } else {
-        contents = { parts: [textPart] };
-    }
-    
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents,
-            config: {
-                systemInstruction,
-            }
-        });
-
-        return response.text.trim();
-    } catch (e) {
-         console.error("Error calling Gemini API for agronomist advice:", e);
-        throw new Error("Failed to get advice from the AI. The model may be busy. Please try again in a moment.");
-    }
+    const result = await chat.sendMessage({ message: newMessage });
+    return result.text;
 };
-
 
 export const getPriceSuggestion = async (cropType: string, location: string): Promise<string> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `I am a farmer in ${location}, Nigeria. What is a good market price (in Nigerian Naira, NGN) to sell ${cropType}? Provide a single sentence with a suggested price range. For example: 'A good price for ${cropType} in ${location} is around ₦400-₦500 per kg.'`;
     
-    const prompt = `You are an agricultural market analyst for Nigeria. Based on current market data, provide a suggested price range per kilogram (in Nigerian Naira, ₦) for selling "${cropType}" in the "${location}" area. 
-    Keep your response concise and start directly with the price range. For example: "Suggested range: ₦200 - ₦230 per kg." Then, add a very brief justification. For example: "This is based on current demand in the region."
-    The entire response should be a single, short paragraph.`;
+    const result = await ai.models.generateContent({
+        model: textModel,
+        contents: prompt
+    });
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        return response.text.trim();
-    } catch (e) {
-         console.error("Error calling Gemini API for price suggestion:", e);
-        throw new Error("Failed to get a price suggestion. The model may be busy. Please try again in a moment.");
-    }
+    return result.text;
 };
 
 export const getMarketAnalysis = async (listings: Listing[]): Promise<string> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-     if (listings.length === 0) {
-        return "The marketplace is quiet right now. Add a listing to get things started and attract buyers!";
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const simplifiedListings = listings.map(l => ({
-        crop: l.cropType,
-        price_per_kg: l.pricePerKg,
-        location: l.location,
-        quantity: l.quantityKg,
-    }));
+    const listingsSummary = listings.map(l => `- ${l.quantityKg}kg of ${l.cropType} in ${l.location} for ₦${l.pricePerKg}/kg`).join('\n');
+    const prompt = `As an agricultural market analyst for Nigerian farmers, analyze the following recent listings:\n\n${listingsSummary}\n\nProvide a brief market pulse summary in markdown format. Highlight trends in pricing, supply, and popular locations. Offer one or two actionable insights for a farmer.`;
 
-    const prompt = `You are a Nigerian agricultural market analyst. Below is a list of current produce listings from a marketplace.
-    Analyze this data and provide a "Market Pulse" summary for a farmer.
-    Your analysis should be concise, helpful, and formatted in Markdown.
-    
-    Your summary MUST include:
-    1.  **Top Opportunity:** Identify the single most promising trend a farmer could act on. This could be a crop in high demand, a location with high prices, etc. Start this section with a sparkle emoji ✨.
-    2.  **Market Insights:** Provide 2-3 bullet points on other interesting trends. For example, which crops have the most listings, or average prices for key crops.
-    
-    Here is the current market data (JSON format):
-    ${JSON.stringify(simplifiedListings)}
-    
-    Generate the Market Pulse summary. Be encouraging and focus on actionable advice.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        return response.text.trim();
-    } catch (e) {
-         console.error("Error calling Gemini API for market analysis:", e);
-        throw new Error("Failed to generate market analysis. The model may be busy. Please try again in a moment.");
-    }
-};
-
-export const getFinancialAnalysis = async (transactions: Transaction[], farmer: FarmerProfile): Promise<string> => {
-     if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-     if (transactions.length === 0) {
-        return "You have no financial data yet. Add your first income or expense transaction to get an analysis of your farm's profitability.";
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const prompt = `You are a friendly and encouraging financial advisor for a Nigerian farmer named ${farmer.name}. Below is their list of income and expense transactions.
-    Analyze this data and provide a "Profit Pulse" summary.
-    Your analysis must be concise, helpful, and formatted in Markdown.
-    
-    IMPORTANT: Transactions with the category 'Savings Contribution' are transfers to a savings goal and should NOT be treated as an operational expense when calculating profitability. Mentioning that the farmer is saving is a positive financial habit. Transactions with the category 'Goal Withdrawal' are funds moved back from savings, not operational income.
-
-    Your summary MUST include:
-    1.  **Key Insight:** Identify the single most important financial takeaway. This could be their most profitable crop, their biggest expense category, or a comment on their overall profitability (excluding savings transfers). Start this section with a lightbulb emoji💡.
-    2.  **Profitability Tip:** Provide one actionable suggestion to help them improve their net profit.
-    3.  **Expense Breakdown:** Briefly mention their top 1-2 operational expense categories.
-    
-    Here is the transaction data (JSON format):
-    ${JSON.stringify(transactions)}
-    
-    Generate the Profit Pulse summary. Be positive and focus on simple, actionable advice.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-
-        return response.text.trim();
-    } catch (e) {
-         console.error("Error calling Gemini API for financial analysis:", e);
-        throw new Error("Failed to generate financial analysis. The model may be busy. Please try again.");
-    }
-}
-
-export const getWeatherForecastForLocation = async (location: string): Promise<DailyForecast[]> => {
-    // Simulate network delay to feel like a real API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // In a real app, you would call a weather API here.
-    // This simulation generates a deterministic but unique forecast based on the location string.
-    console.log(`Simulating weather fetch for: ${location}`);
-
-    let hash = 0;
-    for (let i = 0; i < location.length; i++) {
-        const char = location.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash |= 0; // Convert to 32bit integer
-    }
-
-    const baseTemp = 28 + (Math.abs(hash) % 5); // Base temp between 28 and 32
-    const basePrecip = 10 + (Math.abs(hash) % 30);
-
-    const conditions: DailyForecast['condition'][] = ['Sunny', 'Partly Cloudy', 'Cloudy', 'Rain', 'Storm'];
-    const days = ['Today', 'Tom', 'Wed', 'Thu', 'Fri'];
-    
-    const forecast: DailyForecast[] = days.map((day, index) => {
-        const dayHash = Math.abs(hash + index * 31);
-        return {
-            day,
-            condition: conditions[dayHash % conditions.length],
-            tempHigh: baseTemp + (dayHash % 4),
-            tempLow: baseTemp - 4 + (dayHash % 3),
-            precipChance: Math.min(95, basePrecip + (dayHash % 50)),
-        };
+    const result = await ai.models.generateContent({
+        model: proModel, // Use Pro for better analysis
+        contents: prompt
     });
 
-    if (forecast[1].condition === 'Storm') forecast[0].condition = 'Rain';
-    if (forecast[0].condition === 'Rain') forecast[0].precipChance = Math.max(70, forecast[0].precipChance);
-
-    return forecast;
+    return result.text;
 };
 
-export const getFarmingAdviceForWeather = async (forecast: DailyForecast[], farmer: FarmerProfile): Promise<Omit<WeatherAdvice, 'forecast'>> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const prompt = `You are an expert Nigerian agronomist providing hyper-local farming advice. A farmer named ${farmer.name} in ${farmer.location} (with a farm at ${farmer.farmLocation || farmer.location}) has the following 5-day weather forecast. 
-    Analyze the forecast and provide:
-    1. A brief summary.
-    2. A list of 2-3 actionable tips.
-    3. A list of critical weather alerts if any severe conditions are detected. Severe conditions include storms, heavy rain (over 60% chance), strong winds, or sudden significant temperature drops. If no severe conditions exist, return an empty array for "alerts".
+export const askAgronomist = async (prompt: string, imageFile: File | null): Promise<string> => {
+    const parts: any[] = [{ text: `You are an expert AI agronomist providing helpful advice to a Nigerian farmer. Answer the following question clearly and concisely. If an image is provided, use it as context for your answer.\n\nQuestion: ${prompt}` }];
 
-    The response MUST be a JSON object with the keys "aiSummary", "aiTips", and "alerts".
-    - "aiSummary": A brief, 1-2 sentence overview of the upcoming weather week.
-    - "aiTips": A JSON array of 2-3 short, practical, and actionable tips based on the forecast. Each tip should be a string.
-    - "alerts": A JSON array of alert objects. Each object should have "severity" ('warning' for critical issues like storms, 'advisory' for less severe but important notices), "title", and "message".
-
-    Weather Forecast Data:
-    ${JSON.stringify(forecast)}
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        aiSummary: { type: Type.STRING },
-                        aiTips: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        alerts: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    severity: { type: Type.STRING, description: "'warning' or 'advisory'" },
-                                    title: { type: Type.STRING },
-                                    message: { type: Type.STRING }
-                                },
-                                required: ["severity", "title", "message"]
-                            }
-                        }
-                    },
-                    required: ["aiSummary", "aiTips", "alerts"]
-                }
-            }
-        });
-
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
-
-    } catch (e) {
-        console.error("Error calling Gemini API for weather advice:", e);
-        throw new Error("Failed to generate farming advice for the weather. The model may be busy. Please try again.");
-    }
-};
-
-export const getReminderSuggestion = async (
-    farmer: FarmerProfile,
-    listings: Listing[],
-    weather: DailyForecast[],
-    transactions: Transaction[],
-    posts: Post[]
-): Promise<Omit<Reminder, 'id' | 'isComplete' | 'dueDate'>> => {
-     if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const farmersCrops = [...new Set(listings.map(l => l.cropType))];
-    const recentExpenses = transactions.filter(t => t.type === 'expense').slice(0, 5);
-    const recentPosts = posts.filter(p => p.farmerName === farmer.name).slice(0, 3).map(p => p.content);
-
-
-    const prompt = `You are a premium AI farming assistant for a farmer in Nigeria. Your task is to suggest a single, highly relevant, and proactive reminder by synthesizing multiple data points about the farmer's activities.
-
-    Farmer's Context:
-    - Name: ${farmer.name}
-    - Location: ${farmer.farmLocation || farmer.location}
-    - Currently selling: ${farmersCrops.join(', ') || 'None listed'}
-    - 5-day weather forecast: ${JSON.stringify(weather)}
-    - Recent expenses: ${JSON.stringify(recentExpenses)}
-    - Recent community posts: ${JSON.stringify(recentPosts)}
-
-    Based on ALL this context, generate one helpful reminder. The reminder should be insightful.
-    Examples of premium suggestions:
-    - If weather shows rain and a recent post mentioned "spots on my leaves": "Follow up on your leaf spot concern. Check plants for blight after the upcoming rain."
-    - If a large "Fertilizer" expense was recently logged: "Your recent fertilizer purchase was significant. Plan to apply it before the rain on Wednesday for best results."
-    - If no income has been logged but they have listings: "Market prices for ${farmersCrops[0] || 'your crops'} are good. Consider posting in the community to attract buyers."
-
-    The response MUST be a JSON object with the keys "title" and "notes".
-    - "title": A short, clear title for the reminder (max 10 words).
-    - "notes": Optional additional details or context for the reminder (max 30 words).
-    `;
-    
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        notes: { type: Type.STRING }
-                    },
-                    required: ["title"]
-                }
-            }
-        });
-
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
-
-    } catch (e) {
-        console.error("Error calling Gemini API for reminder suggestion:", e);
-        throw new Error("Failed to generate a reminder suggestion. The model may be busy. Please try again.");
-    }
-};
-
-
-export const routeUserQuery = async (
-    prompt: string,
-    imageFile: File | null,
-    allListings: Listing[]
-): Promise<CopilotMessageContent> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    // If an image is provided, the primary intent is almost always diagnosis.
     if (imageFile) {
-        return await diagnoseCrop(imageFile);
+        parts.push(await fileToGenerativePart(imageFile));
     }
+
+    const result = await ai.models.generateContent({
+        model: visionModel, // Vision model can handle both text and image
+        contents: { parts }
+    });
     
-    // If no image, classify the text prompt.
-    const routerPrompt = `You are an AI router for an agricultural app. Classify the user's intent based on their query.
-    The possible intents are: 'PRICE_SUGGESTION', 'MARKET_ANALYSIS', 'GENERAL_ADVICE'.
+    return result.text;
+};
 
-    - If the user asks for the price of a specific crop in a specific location (e.g., "price of maize in Lagos", "how much for tomatoes in Ikeja"), the intent is 'PRICE_SUGGESTION'. Extract the 'crop' and 'location'.
-    - If the user asks a general question about market trends, what's in demand, or for an analysis of the market, the intent is 'MARKET_ANALYSIS'.
-    - Otherwise, for any other agricultural question (e.g., "how to improve soil", "what is this bug?"), the intent is 'GENERAL_ADVICE'.
+export const getWeatherAdvice = async (farmLocation: string): Promise<WeatherAdvice> => {
+    const prompt = `Provide a 5-day weather forecast and farming advice for a farmer in ${farmLocation}, Nigeria. Today is ${new Date().toLocaleDateString()}.
+    
+    Your response must be a JSON object with this exact structure:
+    {
+      "forecast": [
+        {"day": "Today", "condition": "Sunny", "tempHigh": 32, "tempLow": 24, "precipChance": 10},
+        ... (4 more days)
+      ],
+      "aiSummary": "A brief summary of the week's weather and its impact.",
+      "aiTips": ["Actionable tip 1 based on forecast.", "Actionable tip 2.", "Actionable tip 3."],
+      "alerts": [
+        {"severity": "warning", "title": "Heat Wave Warning", "message": "High temperatures expected on Friday."}
+      ]
+    }
 
-    Respond ONLY with a JSON object.
-    User Query: "${prompt}"`;
+    The "condition" must be one of: 'Sunny', 'Partly Cloudy', 'Cloudy', 'Rain', 'Storm'.
+    "alerts" should be an empty array if there are no severe weather warnings.
+    "day" for tomorrow should be "Tomorrow", then the day of the week (e.g., 'Wed').`;
 
+    const result = await ai.models.generateContent({
+        model: textModel,
+        contents: prompt,
+    });
+    
+    // The model may not return perfect JSON, so we need to be careful.
+    const rawText = result.text.replace(/```json/g, '').replace(/```/g, '').trim();
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: routerPrompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        intent: { type: Type.STRING, description: "One of 'PRICE_SUGGESTION', 'MARKET_ANALYSIS', 'GENERAL_ADVICE'." },
-                        crop: { type: Type.STRING, description: "The crop type, if applicable." },
-                        location: { type: Type.STRING, description: "The location, if applicable." }
-                    },
-                    required: ["intent"]
-                }
-            }
-        });
-
-        const classification = JSON.parse(response.text.trim());
-
-        switch (classification.intent) {
-            case 'PRICE_SUGGESTION':
-                if (classification.crop && classification.location) {
-                    const suggestion = await getPriceSuggestion(classification.crop, classification.location);
-                    return { type: 'priceSuggestion', suggestion };
-                }
-                // Fallback if entities not found
-                return await askAgronomist(prompt, null);
-
-            case 'MARKET_ANALYSIS':
-                const analysis = await getMarketAnalysis(allListings);
-                return { type: 'marketAnalysis', analysis };
-
-            case 'GENERAL_ADVICE':
-            default:
-                return await askAgronomist(prompt, null);
-        }
-
-    } catch (e) {
-        console.error("Error routing user query:", e);
-        // Fallback to general advice on any routing error
-        return await askAgronomist(prompt, null);
+        return JSON.parse(rawText) as WeatherAdvice;
+    } catch(e) {
+        console.error("Failed to parse weather JSON:", rawText, e);
+        throw new Error("Could not get weather advice from AI.");
     }
 };
 
-export const initializeChatSession = (diagnosis: Diagnosis): Chat => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const getReminderSuggestion = async (existingReminders: Reminder[], profile: FarmerProfile | null): Promise<Omit<Reminder, 'id' | 'isComplete' | 'dueDate'> | null> => {
+    const prompt = `I am a farmer named ${profile?.name}. Here are my upcoming reminders: ${JSON.stringify(existingReminders)}. Based on general farming best practices, suggest one new, relevant task I might be forgetting. For example, 'Check irrigation lines' or 'Prepare soil for next season'. Return a JSON object with "title" and "notes" or null if you have no suggestion.`;
 
-    const chat = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      history: [
-        { 
-          role: 'user', 
-          parts: [{ text: `CONTEXT: The user has just received the following crop diagnosis.
-            - Crop Type: ${diagnosis.cropType}
-            - Disease/Pest: ${diagnosis.diseaseName}
-            - Confidence: ${diagnosis.confidenceScore}
-            - Severity: ${diagnosis.severity}
-            - Recommended Treatment: ${diagnosis.recommendedTreatment}
-            - Preventive Tips: ${diagnosis.preventiveTips.join(', ')}
-            
-            Now, answer any follow-up questions the user has.` 
-          }] 
-        },
-        {
-          role: 'model',
-          parts: [{ text: "Understood. I have the diagnosis details. I am ready to answer the user's questions." }]
-        }
-      ],
-      config: {
-        systemInstruction: 'You are FarmConnect AI, an expert agronomist providing follow-up advice to a farmer in Nigeria. The user has just received an automated diagnosis. Your role is to clarify, expand, and provide practical guidance based on that diagnosis. Be friendly, encouraging, and use simple language.',
-      },
+    const result = await ai.models.generateContent({ model: textModel, contents: prompt });
+    try {
+        return JSON.parse(result.text);
+    } catch {
+        return null;
+    }
+};
+
+export const getGrowthPlan = async (profile: FarmerProfile, listings: Listing[], posts: Post[]): Promise<GrowthPlanTask[]> => {
+    const prompt = `Create a personalized "Growth Plan" with 3 actionable tasks for a farmer named ${profile.name} who is at Level ${profile.level}.
+    Their profile: ${JSON.stringify(profile)}.
+    Their listings: ${listings.length} active.
+    Their community posts: ${posts.length} created.
+
+    Generate tasks that encourage app engagement and good farming practices.
+    Return a JSON array of objects with this exact structure:
+    [
+        {"id": "task1", "title": "Task Title", "description": "Brief description.", "action": "ACTION_TYPE", "targetId": "optional_id", "xp": 25},
+        ...
+    ]
+    Valid ACTION_TYPE values: 'VIEW_TUTORIAL', 'CREATE_POST', 'EDIT_LISTING', 'INSPECT_CROP', 'LEARN_MORE'.
+    'xp' should be between 10 and 50.`;
+
+    const result = await ai.models.generateContent({ model: proModel, contents: prompt });
+    try {
+        return JSON.parse(result.text) as GrowthPlanTask[];
+    } catch(e) {
+        console.error("Failed to parse growth plan JSON:", result.text, e);
+        return [];
+    }
+};
+
+export const getFinancialAnalysis = async (monthlyTransactions: Transaction[], period: { month: string, year: number }): Promise<string> => {
+    const { totalIncome, totalExpenses, netProfit } = monthlyTransactions.reduce((acc, t) => {
+        if (t.type === 'income') acc.totalIncome += t.amount;
+        else acc.totalExpenses += t.amount;
+        acc.netProfit = acc.totalIncome - acc.totalExpenses;
+        return acc;
+    }, { totalIncome: 0, totalExpenses: 0, netProfit: 0 });
+
+    const transactionSummary = monthlyTransactions.map(t => ` - ${t.type === 'income' ? 'INCOME' : 'EXPENSE'}: ₦${t.amount.toLocaleString()} for "${t.description}"`).join('\n');
+    
+    const prompt = `
+        You are "Profit Pulse", a friendly financial advisor for a small-scale farmer in Nigeria. 
+        Analyze the following financial data for ${period.month} ${period.year}.
+
+        - Total Income: ₦${totalIncome.toLocaleString()}
+        - Total Expenses: ₦${totalExpenses.toLocaleString()}
+        - Net Profit/Loss: ₦${netProfit.toLocaleString()}
+
+        Here's a list of transactions:
+        ${transactionSummary}
+        
+        Please provide a concise, one-paragraph financial summary.
+        - Start with an encouraging and friendly tone.
+        - Briefly interpret the net profit or loss.
+        - Offer one actionable insight or a question for the farmer to consider for improving their finances next month, based on the provided transactions.
+        - Keep the entire summary under 60 words.
+    `;
+    
+    const result = await ai.models.generateContent({
+        model: proModel,
+        contents: prompt
     });
 
-    return chat;
+    return result.text;
 };
 
-export const initializeBuyerChatSession = (listing: Listing): { chatSession: Chat, initialMessage: string } => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const getFinancialReportSummary = async (
+    profile: FarmerProfile,
+    stats: { totalIncome: number, totalExpenses: number, netProfit: number, salesTransactions: number, avgMonthlyIncome: number }
+): Promise<string> => {
+    const prompt = `
+        You are an AI financial advisor preparing a summary for a loan readiness report for a small-scale Nigerian farmer named ${profile.name}.
+        The tone should be professional, positive, and confident, suitable for a loan officer to read.
 
-    const chatSession = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      history: [
-        { 
-          role: 'user', 
-          parts: [{ text: `CONTEXT: A buyer is interested in the following marketplace listing.
-            - Farmer's Name: ${listing.farmerName}
-            - Crop Type: ${listing.cropType}
-            - Quantity Available: ${listing.quantityKg} kg
-            - Price: ₦${listing.pricePerKg} per kg
-            - Location: ${listing.location}
-            - Farmer's Description: ${listing.description || 'Not provided.'}
-            
-            Your role is to act as a helpful assistant to the buyer. Answer their questions about the produce, availability, payment, and logistics. Do not invent information; base your answers on the listing details.` 
-          }] 
-        },
-        {
-          role: 'model',
-          parts: [{ text: "Understood. I have the listing details. I am ready to assist the buyer." }]
-        }
-      ],
-      config: {
-        systemInstruction: 'You are FarmConnect AI, a marketplace assistant helping a buyer connect with a farmer. Your tone should be helpful, professional, and trustworthy. Keep responses concise and focused on the user\'s questions about the listing.',
-      },
-    });
+        Here is the farmer's financial data:
+        - Total Recorded Income: ₦${stats.totalIncome.toLocaleString()}
+        - Total Recorded Expenses: ₦${stats.totalExpenses.toLocaleString()}
+        - Net Profit: ₦${stats.netProfit.toLocaleString()}
+        - Average Monthly Income: ₦${stats.avgMonthlyIncome.toLocaleString()}
+        - Number of Sales Transactions: ${stats.salesTransactions}
 
-    const initialMessage = `Hello! I see you're interested in the **${listing.cropType}** from **${listing.farmerName}** in **${listing.location}**. I'm here to help answer any questions you have about this listing. What would you like to know?`;
-    
-    return { chatSession, initialMessage };
-};
-
-
-export const initializeFarmerChatSession = (listing: Listing, history: ChatMessage[]): Chat => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    // Reformat our app's history for the Gemini API
-    const geminiHistory = history.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.content }]
-    }));
-
-    const chatSession = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      history: [
-        { 
-          role: 'user', 
-          parts: [{ text: `CONTEXT: You are ${listing.farmerName}, a farmer who has listed produce on the marketplace. A buyer has started a conversation with you.
-            - Your Listing - Crop Type: ${listing.cropType}
-            - Your Listing - Quantity Available: ${listing.quantityKg} kg
-            - Your Listing - Price: ₦${listing.pricePerKg} per kg
-            - Your Listing - Location: ${listing.location}
-            - Your Listing - Description: ${listing.description || 'Not provided.'}
-            
-            Below is the conversation history so far. Your role is to answer the buyer's questions and facilitate a sale. Be helpful and clear in your responses.` 
-          }] 
-        },
-        {
-          role: 'model',
-          parts: [{ text: `Understood. I am ready to act as the farmer, ${listing.farmerName}, and continue the conversation with the buyer based on the provided history.` }]
-        },
-        ...geminiHistory
-      ],
-      config: {
-        systemInstruction: 'You are FarmConnect AI, acting as a helpful assistant for a farmer. You are speaking to a potential buyer. Your tone should be friendly, professional, and aimed at making a sale. Answer questions based on the listing details provided.',
-      },
-    });
-    
-    return chatSession;
-};
-
-export const getGrowthPlan = async (
-    farmer: FarmerProfile,
-    listings: Listing[],
-    posts: Post[],
-    tutorials: TutorialCategory[]
-): Promise<GrowthPlanTask[]> => {
-    if (!process.env.API_KEY) {
-        throw new Error("API_KEY environment variable is not set.");
-    }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const simplifiedListings = listings.map(l => l.cropType).join(', ') || 'none';
-    const simplifiedPosts = posts.slice(0, 3).map(p => p.content.substring(0, 50)).join('; ');
-    const simplifiedTutorials = tutorials.flatMap(c => c.tutorials.map(t => ({ id: t.id, title: t.title }))).slice(0, 10);
-
-    const prompt = `You are an AI farm mentor for a Nigerian farmer named ${farmer.name}. Your goal is to create a personalized "Growth Plan" with 3-4 actionable tasks to help them succeed. The tasks should be encouraging, relevant, and varied.
-
-    Farmer's Context:
-    - Name: ${farmer.name}
-    - Level: ${farmer.level}
-    - Location: ${farmer.location}
-    - Current Marketplace Listings: ${simplifiedListings}
-    - Recent Community Posts: "${simplifiedPosts}"
-
-    Available Tutorials:
-    ${JSON.stringify(simplifiedTutorials)}
-
-    Generate a list of 3-4 tasks. Each task must be a JSON object with:
-    - "id": A unique string ID for the task.
-    - "title": A short, engaging title (e.g., "Boost Your Soil Knowledge").
-    - "description": A 1-2 sentence explanation of why this task is helpful.
-    - "action": One of the following action types: 'VIEW_TUTORIAL', 'CREATE_POST', 'EDIT_LISTING', 'INSPECT_CROP', 'LEARN_MORE'.
-    - "targetId": (Optional) The ID of the tutorial or listing if relevant.
-    - "xp": The experience points awarded for completing the task (between 10 and 50).
-
-    Task Ideas:
-    - Suggest a relevant tutorial from the list based on their crops.
-    - Encourage them to share knowledge in the community.
-    - Suggest improving an old marketplace listing.
-    - Give a general farming tip as a 'LEARN_MORE' task.
-
-    The response must be a valid JSON array of these task objects.
+        Based on this data, write a concise, one-paragraph (3-4 sentences) "Advisor's Summary".
+        - Acknowledge the farmer's diligence in record-keeping.
+        - Highlight the positive net profit as evidence of a viable business.
+        - Mention the consistent sales activity.
+        - Conclude with a statement about their potential for growth with additional capital.
+        - Do not use overly casual or emotional language. Maintain a professional and optimistic tone.
     `;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            title: { type: Type.STRING },
-                            description: { type: Type.STRING },
-                            action: { type: Type.STRING },
-                            targetId: { type: Type.STRING },
-                            xp: { type: Type.INTEGER },
-                        },
-                        required: ["id", "title", "description", "action", "xp"]
-                    }
-                }
-            }
-        });
+    const result = await ai.models.generateContent({
+        model: proModel,
+        contents: prompt
+    });
 
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+    return result.text;
+};
 
-    } catch (e) {
-        console.error("Error calling Gemini API for growth plan:", e);
-        throw new Error("Failed to generate a growth plan. The model may be busy. Please try again.");
+
+export const copilotAsk = async (prompt: string, image: File | null, context: { diagnosis: Diagnosis | null, listings: Listing[], profile: FarmerProfile | null }): Promise<CopilotMessageContent> => {
+    // This is a router function that decides which tool to use
+    if (image && (prompt.toLowerCase().includes('diagnose') || prompt.toLowerCase().includes('what is this'))) {
+        return await diagnoseCrop(image);
     }
+    
+    if (prompt.toLowerCase().includes('market price') || prompt.toLowerCase().includes('suggestion')) {
+        const cropMatch = prompt.toLowerCase().match(/price for (.*?)( in|$)/);
+        const locationMatch = prompt.toLowerCase().match(/in (.*?)\?*$/);
+        const crop = cropMatch ? cropMatch[1].trim() : "tomatoes";
+        const location = locationMatch ? locationMatch[1].trim() : "Lagos";
+        const suggestion = await getPriceSuggestion(crop, location);
+        return { type: 'priceSuggestion', suggestion };
+    }
+
+    if (prompt.toLowerCase().includes('market trend') || prompt.toLowerCase().includes('analyze')) {
+        const analysis = await getMarketAnalysis(context.listings.slice(0, 10));
+        return { type: 'marketAnalysis', analysis };
+    }
+    
+    // Default to a general agronomist question
+    return await askAgronomist(prompt, image);
 };

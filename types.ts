@@ -187,3 +187,14 @@ export interface FinancialAnalysis {
   totalExpenses: number;
   aiSummary: string;
 }
+
+export interface FinancialReportData {
+    farmer: FarmerProfile;
+    totalIncome: number;
+    totalExpenses: number;
+    netProfit: number;
+    avgMonthlyIncome: number;
+    salesTransactions: number;
+    largestIncomeTransactions: Transaction[];
+    aiSummary: string;
+}
