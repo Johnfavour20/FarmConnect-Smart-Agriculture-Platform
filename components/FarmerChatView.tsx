@@ -1,6 +1,7 @@
 // components/FarmerChatView.tsx
 import React from 'react';
-import type { Listing, ChatMessage } from '../types';
+// FIX: Import FarmerProfile type
+import type { Listing, ChatMessage, FarmerProfile } from '../types';
 import { ChatInterface } from './ChatInterface';
 import { LocationMarkerIcon, ArrowLeftIcon, FarmerIcon } from './IconComponents';
 
@@ -10,6 +11,8 @@ interface FarmerChatViewProps {
   isChatLoading: boolean;
   onSendMessage: (message: string) => void;
   onBack: () => void;
+  // FIX: Add farmerProfile prop to match usage in App.tsx
+  farmerProfile: FarmerProfile;
 }
 
 export const FarmerChatView: React.FC<FarmerChatViewProps> = ({
@@ -18,6 +21,7 @@ export const FarmerChatView: React.FC<FarmerChatViewProps> = ({
   isChatLoading,
   onSendMessage,
   onBack,
+  farmerProfile,
 }) => {
   return (
     <div className="animate-fade-in">

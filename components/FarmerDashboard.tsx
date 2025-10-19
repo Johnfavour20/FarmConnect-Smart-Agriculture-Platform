@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Listing, AllChats, Post, FarmerProfile, Comment, WeatherAdvice, Reminder, GrowthPlanTask, GrowthPlanTaskAction } from '../types';
-import { MarketplaceIcon, ChatBubbleIcon, EditIcon, TrashIcon, ExclamationTriangleIcon, TrendingUpIcon, BellIcon, UsersIcon, InformationCircleIcon, XIcon } from './IconComponents';
+import type { Listing, AllChats, Post, FarmerProfile, Comment, WeatherAdvice, Reminder, GrowthPlanTask, GrowthPlanTaskAction, Transaction } from '../types';
+import { MarketplaceIcon, ChatBubbleIcon, EditIcon, TrashIcon, ExclamationTriangleIcon, TrendingUpIcon, BellIcon, UsersIcon, InformationCircleIcon, XIcon, CurrencyDollarIcon } from './IconComponents';
 import { Spinner } from './Spinner';
 import { WeatherWidget } from './WeatherWidget';
 import { RemindersWidget } from './RemindersWidget';
@@ -146,12 +146,46 @@ const ActivityFeedCard: React.FC<{ activities: ActivityItem[], onViewChat: (list
     </div>
 );
 
+// --- New Mobile-first Listing Card ---
+const ListingRowCard: React.FC<{
+    listing: Listing;
+    hasUnread: boolean;
+    onViewChat: (listing: Listing) => void;
+    onEdit: (listing: Listing) => void;
+    onDelete: (listingId: string) => void;
+}> = ({ listing, hasUnread, onViewChat, onEdit, onDelete }) => (
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-start gap-4">
+            <img src={listing.imageUrl} alt={listing.cropType} className="w-20 h-20 rounded-lg object-cover" />
+            <div className="flex-grow">
+                <h4 className="font-bold text-slate-800">{listing.cropType}</h4>
+                <p className="text-sm text-green-700 font-semibold">₦{listing.pricePerKg}/kg</p>
+                <p className="text-xs text-slate-500">{listing.quantityKg} kg available</p>
+            </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 mt-3 pt-3">
+            <button onClick={() => onViewChat(listing)} className="font-medium text-blue-600 hover:bg-blue-50 p-2 rounded-full relative" title="View Chats">
+                <ChatBubbleIcon className="h-5 w-5"/>
+                {hasUnread && 
+                    <span className="absolute top-1 right-1 flex h-2 w-2">
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                }
+            </button>
+            <button onClick={() => onEdit(listing)} className="font-medium text-green-600 hover:bg-green-50 p-2 rounded-full" title="Edit Listing"><EditIcon className="h-5 w-5"/></button>
+            <button onClick={() => onDelete(listing.id)} className="font-medium text-red-600 hover:bg-red-50 p-2 rounded-full" title="Delete Listing"><TrashIcon className="h-5 w-5"/></button>
+        </div>
+    </div>
+);
+
+
 // --- Main Dashboard Component ---
 
 interface FarmerDashboardProps {
     listings: Listing[];
     allChats: AllChats;
     allPosts: Post[];
+    transactions: Transaction[];
     farmerProfile: FarmerProfile;
     onViewChat: (listing: Listing) => void;
     onEdit: (listing: Listing) => void;
@@ -185,6 +219,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
     listings, 
     allChats, 
     allPosts,
+    transactions,
     farmerProfile,
     onViewChat, 
     onEdit, 
@@ -223,7 +258,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
     }, [weatherAdvice]);
 
 
-    const { unreadChatsCount, recentActivities } = useMemo(() => {
+    const { unreadChatsCount, recentActivities, netProfit } = useMemo(() => {
         let unread = 0;
         const activities: ActivityItem[] = [];
 
@@ -257,14 +292,20 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         
         activities.sort((a, b) => b.timestamp - a.timestamp);
 
-        return { unreadChatsCount: unread, recentActivities: activities.slice(0, 5) };
+        const { totalIncome, totalExpenses } = transactions.reduce((acc, t) => {
+            if (t.type === 'income') acc.totalIncome += t.amount;
+            else acc.totalExpenses += t.amount;
+            return acc;
+        }, { totalIncome: 0, totalExpenses: 0 });
 
-    }, [allChats, listings, allPosts, farmerProfile.name]);
+        return { 
+            unreadChatsCount: unread, 
+            recentActivities: activities.slice(0, 5),
+            netProfit: totalIncome - totalExpenses
+        };
+
+    }, [allChats, listings, allPosts, transactions, farmerProfile.name]);
     
-    const farmerPostCount = useMemo(() => {
-        return allPosts.filter(p => p.farmerName === farmerProfile.name).length;
-    }, [allPosts, farmerProfile.name]);
-
     const mostSevereAlertType = useMemo(() => {
         if (!weatherAdvice?.alerts || weatherAdvice.alerts.length === 0) return null;
         return weatherAdvice.alerts.some(a => a.severity === 'warning') ? 'warning' : 'advisory';
@@ -308,9 +349,10 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                     ))}
                 </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard title="Active Listings" value={listings.length} icon={<MarketplaceIcon className="h-6 w-6 text-green-600"/>} />
                 <StatCard title="Unread Messages" value={unreadChatsCount} icon={<ChatBubbleIcon className="h-6 w-6 text-green-600"/>} />
+                <StatCard title="Net Profit" value={`₦${netProfit.toLocaleString()}`} icon={<CurrencyDollarIcon className="h-6 w-6 text-green-600"/>} />
                 <StatCard title={`Level ${farmerProfile.level}`} value={`${farmerProfile.xp} XP`} icon={<UsersIcon className="h-6 w-6 text-green-600"/>} />
             </div>
 
@@ -350,43 +392,60 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             <div>
                  <h3 className="text-xl font-bold text-green-800 mb-4">Your Active Listings</h3>
                  {listings.length > 0 ? (
-                    <div className="overflow-x-auto bg-white rounded-xl shadow-md border border-slate-200">
-                        <table className="w-full text-sm text-left text-slate-500">
-                            <thead className="text-xs text-slate-700 uppercase bg-slate-50">
-                                <tr>
-                                    <th scope="col" className="px-6 py-3">Crop</th>
-                                    <th scope="col" className="px-6 py-3">Price</th>
-                                    <th scope="col" className="px-6 py-3">Quantity</th>
-                                    <th scope="col" className="px-6 py-3 text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {listings.map(listing => (
-                                    <tr key={listing.id} className="bg-white border-b hover:bg-slate-50">
-                                        <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
-                                            <img src={listing.imageUrl} alt={listing.cropType} className="w-10 h-10 rounded-md object-cover"/>
-                                            {listing.cropType}
-                                        </td>
-                                        <td className="px-6 py-4">₦{listing.pricePerKg}/kg</td>
-                                        <td className="px-6 py-4">{listing.quantityKg} kg</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <button onClick={() => onViewChat(listing)} className="font-medium text-blue-600 hover:underline p-1 relative" title="View Chats">
-                                                    <ChatBubbleIcon className="h-5 w-5"/>
-                                                    {(allChats[listing.id] || []).some(c => c.role === 'user') && 
-                                                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                                        </span>
-                                                    }
-                                                </button>
-                                                <button onClick={() => onEdit(listing)} className="font-medium text-green-600 hover:underline p-1" title="Edit Listing"><EditIcon className="h-5 w-5"/></button>
-                                                <button onClick={() => setListingToDelete(listing.id)} className="font-medium text-red-600 hover:underline p-1" title="Delete Listing"><TrashIcon className="h-5 w-5"/></button>
-                                            </div>
-                                        </td>
+                    <div>
+                        {/* Mobile View: Cards */}
+                        <div className="md:hidden space-y-3">
+                            {listings.map(listing => (
+                                <ListingRowCard 
+                                    key={listing.id}
+                                    listing={listing}
+                                    hasUnread={(allChats[listing.id] || []).some(c => c.role === 'user')}
+                                    onViewChat={onViewChat}
+                                    onEdit={onEdit}
+                                    onDelete={setListingToDelete}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Desktop View: Table */}
+                        <div className="hidden md:block overflow-x-auto bg-white rounded-xl shadow-md border border-slate-200">
+                            <table className="w-full text-sm text-left text-slate-500">
+                                <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                                    <tr>
+                                        <th scope="col" className="px-6 py-3">Crop</th>
+                                        <th scope="col" className="px-6 py-3">Price</th>
+                                        <th scope="col" className="px-6 py-3">Quantity</th>
+                                        <th scope="col" className="px-6 py-3 text-center">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {listings.map(listing => (
+                                        <tr key={listing.id} className="bg-white border-b hover:bg-slate-50">
+                                            <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
+                                                <img src={listing.imageUrl} alt={listing.cropType} className="w-10 h-10 rounded-md object-cover"/>
+                                                {listing.cropType}
+                                            </td>
+                                            <td className="px-6 py-4">₦{listing.pricePerKg}/kg</td>
+                                            <td className="px-6 py-4">{listing.quantityKg} kg</td>
+                                            <td className="px-6 py-4 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <button onClick={() => onViewChat(listing)} className="font-medium text-blue-600 hover:underline p-1 relative" title="View Chats">
+                                                        <ChatBubbleIcon className="h-5 w-5"/>
+                                                        {(allChats[listing.id] || []).some(c => c.role === 'user') && 
+                                                            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                                            </span>
+                                                        }
+                                                    </button>
+                                                    <button onClick={() => onEdit(listing)} className="font-medium text-green-600 hover:underline p-1" title="Edit Listing"><EditIcon className="h-5 w-5"/></button>
+                                                    <button onClick={() => setListingToDelete(listing.id)} className="font-medium text-red-600 hover:underline p-1" title="Delete Listing"><TrashIcon className="h-5 w-5"/></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 ) : (
                     <div className="text-center bg-white p-8 rounded-xl shadow-md border border-slate-200">

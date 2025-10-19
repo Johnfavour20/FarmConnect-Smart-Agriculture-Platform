@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Chat } from '@google/genai';
 import { Header } from './components/Header';
@@ -18,13 +19,18 @@ import { AgronomistChat } from './components/AgronomistChat';
 import { CopilotModal } from './components/CopilotModal';
 import { LearningHub } from './components/LearningHub';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
-import { diagnoseCrop, initializeChatSession, initializeBuyerChatSession, initializeFarmerChatSession, getPriceSuggestion, askAgronomist, getMarketAnalysis, routeUserQuery, getFarmingAdviceForWeather, getWeatherForecastForLocation, getReminderSuggestion, getGrowthPlan } from './services/geminiService';
+import { PostRequestModal } from './components/PostRequestModal';
+import { BuyerRequestsFeed } from './components/BuyerRequestsFeed';
+import { FarmerResponseModal } from './components/FarmerResponseModal';
+import { FinanceTracker } from './components/FinanceTracker';
+import { TransactionModal } from './components/TransactionModal';
+import { diagnoseCrop, initializeChatSession, initializeBuyerChatSession, initializeFarmerChatSession, getPriceSuggestion, askAgronomist, getMarketAnalysis, routeUserQuery, getFarmingAdviceForWeather, getWeatherForecastForLocation, getReminderSuggestion, getGrowthPlan, getFinancialAnalysis } from './services/geminiService';
 import { generateMockListings, generateMockTutorials, generateMockPosts } from './services/mockData';
-import type { Diagnosis, ChatMessage, Listing, UserRole, AllChats, Post, Comment, FarmerProfile as FarmerProfileType, AgronomistChatMessage, CopilotChatMessage, DailyForecast, WeatherAdvice, Tutorial, TutorialCategory, Reminder, PollOption, GrowthPlanTask, GrowthPlanTaskAction } from './types';
+import type { Diagnosis, ChatMessage, Listing, UserRole, AllChats, Post, Comment, FarmerProfile as FarmerProfileType, AgronomistChatMessage, CopilotChatMessage, DailyForecast, WeatherAdvice, Tutorial, TutorialCategory, Reminder, PollOption, GrowthPlanTask, GrowthPlanTaskAction, BuyerRequest, FarmerResponse, Transaction } from './types';
 import { FarmerIcon, BuyerIcon, SparklesIcon } from './components/IconComponents';
 
 
-type FarmerViewMode = 'dashboard' | 'community' | 'scanner' | 'diagnosis' | 'listingForm' | 'chat' | 'editListing' | 'profile' | 'agronomist' | 'learningHub';
+type FarmerViewMode = 'dashboard' | 'community' | 'scanner' | 'diagnosis' | 'listingForm' | 'chat' | 'editListing' | 'profile' | 'agronomist' | 'learningHub' | 'buyerRequestsFeed' | 'finance';
 type BuyerViewMode = 'feed' | 'chat' | 'purchaseSuccess';
 
 const fileToDataUrl = (file: File): Promise<string> => {
@@ -34,6 +40,12 @@ const fileToDataUrl = (file: File): Promise<string> => {
         reader.onerror = reject;
         reader.readAsDataURL(file);
     });
+};
+
+const ITEMS_PER_PAGE = {
+    marketplace: 9,
+    community: 5,
+    finance: 10
 };
 
 
@@ -101,6 +113,30 @@ const App: React.FC = () => {
     }
   });
 
+  const [allBuyerRequests, setAllBuyerRequests] = useState<BuyerRequest[]>(() => {
+    try {
+      const savedRequests = localStorage.getItem('farmconnect_buyer_requests');
+      return savedRequests ? JSON.parse(savedRequests) : [];
+    } catch (error) {
+      console.error("Failed to parse buyer requests from localStorage", error);
+      return [];
+    }
+  });
+
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>(() => {
+    try {
+      const saved = localStorage.getItem('farmconnect_transactions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+      console.error("Failed to parse transactions from localStorage", error);
+      return [];
+    }
+  });
+
+  const [buyerName, setBuyerName] = useState<string>(() => {
+    return localStorage.getItem('farmconnect_buyer_name') || '';
+  });
+
 
   // Farmer Flow State
   const [farmerView, setFarmerView] = useState<FarmerViewMode>('dashboard');
@@ -126,6 +162,11 @@ const App: React.FC = () => {
   const [marketAnalysis, setMarketAnalysis] = useState<string | null>(null);
   const [isMarketAnalysisLoading, setIsMarketAnalysisLoading] = useState<boolean>(false);
   const [marketAnalysisError, setMarketAnalysisError] = useState<string | null>(null);
+
+  // Finance Tracker State
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState<boolean>(false);
+  const [financialAnalysis, setFinancialAnalysis] = useState<string | null>(null);
+  const [isFinancialAnalysisLoading, setIsFinancialAnalysisLoading] = useState<boolean>(false);
 
   // Weather State
   const [weatherAdvice, setWeatherAdvice] = useState<WeatherAdvice | null>(null);
@@ -154,14 +195,26 @@ const App: React.FC = () => {
   // Buyer Flow State
   const [buyerView, setBuyerView] = useState<BuyerViewMode>('feed');
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState<boolean>(false);
+  const [isPostRequestModalOpen, setIsPostRequestModalOpen] = useState<boolean>(false);
   const [purchaseSuccessDetails, setPurchaseSuccessDetails] = useState<{listing: Omit<Listing, 'id' | 'imageUrl'>, quantity: number} | null>(null);
   const [filters, setFilters] = useState<{ cropType: string; location: string }>({ cropType: 'all', location: '' });
+
+  // Farmer Response State
+  const [requestToRespond, setRequestToRespond] = useState<BuyerRequest | null>(null);
 
 
   // Unified Chat State
   const [activeChatSession, setActiveChatSession] = useState<Chat | null>(null);
   const [activeListing, setActiveListing] = useState<Listing | null>(null);
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
+  
+  // Scalability/Pagination State
+  const [visibleCounts, setVisibleCounts] = useState({
+      marketplace: ITEMS_PER_PAGE.marketplace,
+      community: ITEMS_PER_PAGE.community,
+      finance: ITEMS_PER_PAGE.finance,
+  });
+
 
   // Persist listings to localStorage
   useEffect(() => {
@@ -187,6 +240,21 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('farmconnect_reminders', JSON.stringify(allReminders));
   }, [allReminders]);
+
+  // Persist buyer requests to localStorage
+  useEffect(() => {
+    localStorage.setItem('farmconnect_buyer_requests', JSON.stringify(allBuyerRequests));
+  }, [allBuyerRequests]);
+
+  // Persist transactions to localStorage
+  useEffect(() => {
+    localStorage.setItem('farmconnect_transactions', JSON.stringify(allTransactions));
+  }, [allTransactions]);
+
+  // Persist buyer name to localStorage
+  useEffect(() => {
+    localStorage.setItem('farmconnect_buyer_name', buyerName);
+  }, [buyerName]);
 
   
   // Effect to set initial farmer view
@@ -313,6 +381,20 @@ const App: React.FC = () => {
         setMarketAnalysisError(err instanceof Error ? err.message : 'An unknown error occurred.');
     } finally {
         setIsMarketAnalysisLoading(false);
+    }
+  };
+
+  const handleFetchFinancialAnalysis = async () => {
+    if (!farmerProfile) return;
+    setIsFinancialAnalysisLoading(true);
+    setFinancialAnalysis(null);
+    try {
+        const analysis = await getFinancialAnalysis(allTransactions, farmerProfile);
+        setFinancialAnalysis(analysis);
+    } catch (err) {
+        setFinancialAnalysis(err instanceof Error ? err.message : 'An unknown error occurred.');
+    } finally {
+        setIsFinancialAnalysisLoading(false);
     }
   };
 
@@ -490,6 +572,7 @@ const App: React.FC = () => {
         farmerName: farmerProfile.name,
         likes: 0,
         comments: [],
+        imageUrl,
         ...postData,
     };
     setAllPosts(prev => [newPost, ...prev]);
@@ -514,23 +597,39 @@ const App: React.FC = () => {
     if (!farmerProfile) return;
     setAllPosts(prev => prev.map(p => {
         if (p.id === postId && p.isPoll && p.pollOptions) {
+            // FIX: This logic was flawed. It removed votes from all other options on any vote.
+            // Correct logic: remove previous vote if it exists, then add new vote.
             const newOptions = p.pollOptions.map((opt, index) => {
-                // Remove user from other options if they've already voted
+                // Remove this user's vote if it exists on any option
                 const votes = opt.votes.filter(voter => voter !== farmerProfile.name);
-                // Add user to the selected option if they haven't voted for it yet
-                if (index === optionIndex && !votes.includes(farmerProfile.name)) {
-                    votes.push(farmerProfile.name);
-                }
                 return { ...opt, votes };
             });
+            
+            // Add the new vote to the selected option if they haven't voted for it already
+            if (!newOptions[optionIndex].votes.includes(farmerProfile.name)) {
+                 newOptions[optionIndex].votes.push(farmerProfile.name);
+            }
+           
             return { ...p, pollOptions: newOptions };
         }
         return p;
     }));
 };
 
-  const handleSaveProfile = (profile: FarmerProfileType) => {
-    setFarmerProfile(profile);
+  // FIX: Updated function signature to match what the `FarmerProfile` component now provides.
+  const handleSaveProfile = async (profileData: Omit<FarmerProfileType, 'level'|'xp'|'profilePictureUrl'>, imageFile: File | null) => {
+    let profilePictureUrl = farmerProfile?.profilePictureUrl;
+    if (imageFile) {
+        profilePictureUrl = await fileToDataUrl(imageFile);
+    }
+    
+    setFarmerProfile(prev => ({
+        ...prev,
+        ...profileData,
+        profilePictureUrl,
+        level: prev?.level || 1,
+        xp: prev?.xp || 0
+    }));
     setFarmerView('dashboard');
   };
 
@@ -562,20 +661,63 @@ const App: React.FC = () => {
   
   const handleGetReminderSuggestion = async () => {
     if (!farmerProfile || !weatherAdvice) {
-        // You can also throw an error or show a message to the user
         console.warn("Cannot get suggestion without profile and weather data.");
         return null;
     }
     try {
-        const suggestion = await getReminderSuggestion(farmerProfile, allListings, weatherAdvice.forecast);
+        const farmerPosts = allPosts.filter(p => p.farmerName === farmerProfile.name);
+        const suggestion = await getReminderSuggestion(farmerProfile, allListings, weatherAdvice.forecast, allTransactions, farmerPosts);
         return suggestion;
     } catch(err) {
         console.error("Error getting reminder suggestion:", err);
-        // Optionally, you can set an error state to show in the UI
         return null;
     }
   };
   
+  // Buyer Request Actions
+  const handlePostBuyerRequest = (requestData: Omit<BuyerRequest, 'id' | 'createdAt' | 'responses' | 'buyerName'>, name: string) => {
+    if (buyerName !== name) {
+        setBuyerName(name);
+    }
+    const newRequest: BuyerRequest = {
+        id: `req_${Date.now()}`,
+        buyerName: name,
+        createdAt: Date.now(),
+        responses: [],
+        ...requestData
+    };
+    setAllBuyerRequests(prev => [newRequest, ...prev].sort((a,b) => b.createdAt - a.createdAt));
+    setIsPostRequestModalOpen(false);
+  };
+
+  const handleRespondToRequest = (listingId: string) => {
+    if (!requestToRespond || !farmerProfile) return;
+    
+    const newResponse: FarmerResponse = {
+        farmerName: farmerProfile.name,
+        listingId: listingId,
+        createdAt: Date.now()
+    };
+
+    setAllBuyerRequests(prev => prev.map(req => 
+        req.id === requestToRespond.id
+            ? { ...req, responses: [...req.responses, newResponse] }
+            : req
+    ));
+
+    setRequestToRespond(null); // Close the modal
+  };
+
+  // Transaction Actions
+  const handleAddTransaction = (transactionData: Omit<Transaction, 'id'>) => {
+    const newTransaction: Transaction = {
+        id: `txn_${Date.now()}`,
+        ...transactionData,
+    };
+    setAllTransactions(prev => [newTransaction, ...prev]);
+    setIsTransactionModalOpen(false);
+  };
+
   // Unified Chat Actions
   const handleSendMessage = async (message: string) => {
     if (!activeChatSession || !activeListing) return;
@@ -624,6 +766,17 @@ const App: React.FC = () => {
     const listingToUpdate = allListings.find(l => l.id === listingId);
     if(!listingToUpdate) return;
     
+    // Auto-log income transaction
+    const incomeAmount = quantity * listingToUpdate.pricePerKg;
+    handleAddTransaction({
+        type: 'income',
+        date: Date.now(),
+        description: `Sale of ${quantity}kg ${listingToUpdate.cropType}`,
+        amount: incomeAmount,
+        category: 'Marketplace Sale'
+    });
+
+    // Update listing quantity
     setAllListings(prev => {
         const updatedListings = prev.map(l => {
             if (l.id === listingId) {
@@ -679,6 +832,13 @@ const App: React.FC = () => {
       clearPriceSuggestion();
   };
   
+  const handleLoadMore = (view: 'marketplace' | 'community' | 'finance') => {
+        setVisibleCounts(prev => ({
+            ...prev,
+            [view]: prev[view] + ITEMS_PER_PAGE[view],
+        }));
+  };
+  
   const filteredListings = useMemo(() => {
     return allListings.filter(listing => {
         const cropMatch = filters.cropType === 'all' || listing.cropType === filters.cropType;
@@ -701,6 +861,7 @@ const App: React.FC = () => {
 
   const renderFarmerContent = () => {
     if (!farmerProfile) {
+        // FIX: Pass correct arguments to `onSave` in the `FarmerProfile` component.
         return <FarmerProfile profile={null} onSave={handleSaveProfile} userPosts={[]} />;
     }
     
@@ -754,6 +915,7 @@ const App: React.FC = () => {
                     listings={allListings.filter(l => l.farmerName === farmerProfile.name)} 
                     allChats={allChats} 
                     allPosts={allPosts}
+                    transactions={allTransactions}
                     farmerProfile={farmerProfile}
                     onViewChat={handleViewChat} 
                     onEdit={handleEditListing}
@@ -775,7 +937,7 @@ const App: React.FC = () => {
                     growthPlanError={growthPlanError}
                     onFetchGrowthPlan={handleFetchGrowthPlan}
                     onCompleteGrowthPlanTask={handleCompleteGrowthPlanTask}
-                    onNavigate={setFarmerView}
+                    onNavigate={(view) => handleGrowthPlanAction(view as GrowthPlanTaskAction)}
                 />;
        case 'community':
             return <CommunityFeed 
@@ -788,6 +950,25 @@ const App: React.FC = () => {
                 farmerProfile={farmerProfile}
                 activeTag={activeTagFilter}
                 onTagSelect={setActiveTagFilter}
+                visibleCount={visibleCounts.community}
+                onLoadMore={() => handleLoadMore('community')}
+            />;
+       case 'buyerRequestsFeed':
+            return <BuyerRequestsFeed
+                requests={allBuyerRequests}
+                onRespond={setRequestToRespond}
+                farmerProfile={farmerProfile}
+            />;
+       case 'finance':
+            return <FinanceTracker
+                transactions={allTransactions}
+                farmerProfile={farmerProfile}
+                onAddTransaction={() => setIsTransactionModalOpen(true)}
+                financialAnalysis={financialAnalysis}
+                isFinancialAnalysisLoading={isFinancialAnalysisLoading}
+                onFetchFinancialAnalysis={handleFetchFinancialAnalysis}
+                visibleCount={visibleCounts.finance}
+                onLoadMore={() => handleLoadMore('finance')}
             />;
       case 'agronomist':
             return <AgronomistChat
@@ -796,6 +977,7 @@ const App: React.FC = () => {
                 onAsk={handleAskAgronomist}
             />;
        case 'profile':
+            // FIX: Pass correct arguments to `onSave` in the `FarmerProfile` component.
             return <FarmerProfile
                 profile={farmerProfile}
                 onSave={handleSaveProfile}
@@ -828,6 +1010,7 @@ const App: React.FC = () => {
                 isChatLoading={isChatLoading}
                 onSendMessage={handleSendMessage}
                 onBack={handleBackToDashboard}
+                farmerProfile={farmerProfile}
             />
           }
           return null;
@@ -845,6 +1028,10 @@ const App: React.FC = () => {
             onContactFarmer={handleContactFarmer} 
             filters={filters}
             onFilterChange={setFilters}
+            onPostRequest={() => setIsPostRequestModalOpen(true)}
+            visibleCount={visibleCounts.marketplace}
+            onLoadMore={() => handleLoadMore('marketplace')}
+            farmerProfile={farmerProfile}
         />;
       case 'chat':
         if (activeListing) {
@@ -857,6 +1044,7 @@ const App: React.FC = () => {
                 onSendMessage={handleSendMessage}
                 onBack={handleBackToMarketplace}
                 onMakeOffer={() => setIsPurchaseModalOpen(true)}
+                farmerProfile={farmerProfile}
               />
               {isPurchaseModalOpen && (
                  <PurchaseModal
@@ -901,7 +1089,7 @@ const App: React.FC = () => {
     </button>
   );
 
-  const showCopilotButton = userRole === 'farmer' && farmerProfile && ['dashboard', 'community', 'scanner', 'profile', 'learningHub'].includes(farmerView);
+  const showCopilotButton = userRole === 'farmer' && farmerProfile && ['dashboard', 'community', 'scanner', 'profile', 'learningHub', 'buyerRequestsFeed', 'finance'].includes(farmerView);
 
   return (
     <div className="min-h-screen bg-green-50/50 font-sans text-slate-800">
@@ -916,7 +1104,7 @@ const App: React.FC = () => {
 
           {userRole === 'farmer' ? (
             <div className="space-y-6">
-                <FarmerNav activeView={farmerView} onNavigate={(view) => setFarmerView(view)} />
+                {farmerProfile && <FarmerNav activeView={farmerView} onNavigate={(view) => setFarmerView(view)} profile={farmerProfile}/>}
                 {renderFarmerContent()}
             </div>
            ) : (
@@ -933,6 +1121,30 @@ const App: React.FC = () => {
         >
             <SparklesIcon className="h-8 w-8" />
         </button>
+      )}
+
+      {isPostRequestModalOpen && (
+        <PostRequestModal 
+            onClose={() => setIsPostRequestModalOpen(false)}
+            onPostRequest={handlePostBuyerRequest}
+            currentBuyerName={buyerName}
+        />
+      )}
+
+      {requestToRespond && farmerProfile && (
+        <FarmerResponseModal
+            request={requestToRespond}
+            farmerListings={allListings.filter(l => l.farmerName === farmerProfile.name)}
+            onClose={() => setRequestToRespond(null)}
+            onSendOffer={handleRespondToRequest}
+        />
+      )}
+
+      {isTransactionModalOpen && (
+          <TransactionModal 
+            onClose={() => setIsTransactionModalOpen(false)}
+            onAddTransaction={handleAddTransaction}
+          />
       )}
 
       <CopilotModal 

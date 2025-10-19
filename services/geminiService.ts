@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Chat } from "@google/genai";
-import type { Diagnosis, Listing, ChatMessage, CopilotMessageContent, DailyForecast, WeatherAdvice, FarmerProfile, Reminder, Post, TutorialCategory, GrowthPlanTask } from '../types';
+import type { Diagnosis, Listing, ChatMessage, CopilotMessageContent, DailyForecast, WeatherAdvice, FarmerProfile, Reminder, Post, TutorialCategory, GrowthPlanTask, Transaction } from '../types';
 
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -163,6 +163,43 @@ export const getMarketAnalysis = async (listings: Listing[]): Promise<string> =>
     }
 };
 
+export const getFinancialAnalysis = async (transactions: Transaction[], farmer: FarmerProfile): Promise<string> => {
+     if (!process.env.API_KEY) {
+        throw new Error("API_KEY environment variable is not set.");
+    }
+     if (transactions.length === 0) {
+        return "You have no financial data yet. Add your first income or expense transaction to get an analysis of your farm's profitability.";
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const prompt = `You are a friendly and encouraging financial advisor for a Nigerian farmer named ${farmer.name}. Below is their list of income and expense transactions.
+    Analyze this data and provide a "Profit Pulse" summary.
+    Your analysis must be concise, helpful, and formatted in Markdown.
+    
+    Your summary MUST include:
+    1.  **Key Insight:** Identify the single most important financial takeaway. This could be their most profitable crop, their biggest expense category, or a comment on their overall profitability. Start this section with a lightbulb emoji💡.
+    2.  **Profitability Tip:** Provide one actionable suggestion to help them improve their net profit.
+    3.  **Expense Breakdown:** Briefly mention their top 1-2 expense categories.
+    
+    Here is the transaction data (JSON format):
+    ${JSON.stringify(transactions)}
+    
+    Generate the Profit Pulse summary. Be positive and focus on simple, actionable advice.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        return response.text.trim();
+    } catch (e) {
+         console.error("Error calling Gemini API for financial analysis:", e);
+        throw new Error("Failed to generate financial analysis. The model may be busy. Please try again.");
+    }
+}
+
 export const getWeatherForecastForLocation = async (location: string): Promise<DailyForecast[]> => {
     // Simulate network delay to feel like a real API call
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -263,7 +300,9 @@ export const getFarmingAdviceForWeather = async (forecast: DailyForecast[], farm
 export const getReminderSuggestion = async (
     farmer: FarmerProfile,
     listings: Listing[],
-    weather: DailyForecast[]
+    weather: DailyForecast[],
+    transactions: Transaction[],
+    posts: Post[]
 ): Promise<Omit<Reminder, 'id' | 'isComplete' | 'dueDate'>> => {
      if (!process.env.API_KEY) {
         throw new Error("API_KEY environment variable is not set.");
@@ -271,20 +310,25 @@ export const getReminderSuggestion = async (
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const farmersCrops = [...new Set(listings.map(l => l.cropType))];
+    const recentExpenses = transactions.filter(t => t.type === 'expense').slice(0, 5);
+    const recentPosts = posts.filter(p => p.farmerName === farmer.name).slice(0, 3).map(p => p.content);
 
-    const prompt = `You are an AI farming assistant for a farmer in Nigeria. Your task is to suggest a single, timely, and relevant reminder based on the farmer's current context.
-    
+
+    const prompt = `You are a premium AI farming assistant for a farmer in Nigeria. Your task is to suggest a single, highly relevant, and proactive reminder by synthesizing multiple data points about the farmer's activities.
+
     Farmer's Context:
     - Name: ${farmer.name}
     - Location: ${farmer.farmLocation || farmer.location}
-    - Currently selling these crops: ${farmersCrops.join(', ') || 'None listed'}
+    - Currently selling: ${farmersCrops.join(', ') || 'None listed'}
     - 5-day weather forecast: ${JSON.stringify(weather)}
+    - Recent expenses: ${JSON.stringify(recentExpenses)}
+    - Recent community posts: ${JSON.stringify(recentPosts)}
 
-    Based on this context, generate one helpful reminder. The reminder should be proactive and specific.
-    Examples of good reminders:
-    - "Check tomato plants for signs of blight after the recent rain."
-    - "Prepare maize fields for planting as the rainy season approaches."
-    - "Schedule harvest for cassava as market prices are currently high."
+    Based on ALL this context, generate one helpful reminder. The reminder should be insightful.
+    Examples of premium suggestions:
+    - If weather shows rain and a recent post mentioned "spots on my leaves": "Follow up on your leaf spot concern. Check plants for blight after the upcoming rain."
+    - If a large "Fertilizer" expense was recently logged: "Your recent fertilizer purchase was significant. Plan to apply it before the rain on Wednesday for best results."
+    - If no income has been logged but they have listings: "Market prices for ${farmersCrops[0] || 'your crops'} are good. Consider posting in the community to attract buyers."
 
     The response MUST be a JSON object with the keys "title" and "notes".
     - "title": A short, clear title for the reminder (max 10 words).

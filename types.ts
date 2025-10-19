@@ -76,6 +76,7 @@ export interface FarmerProfile {
   name: string;
   location: string; // e.g. Primary Market / City
   farmLocation?: string; // Specific location for weather
+  profilePictureUrl?: string; // Data URL of the profile picture
   level: number;
   xp: number;
 }
@@ -136,4 +137,45 @@ export interface GrowthPlanTask {
   action: GrowthPlanTaskAction;
   targetId?: string; // e.g., tutorial.id or listing.id
   xp: number;
+}
+
+// --- Buyer Request Board Types ---
+export interface FarmerResponse {
+  farmerName: string;
+  listingId: string;
+  createdAt: number;
+}
+
+export interface BuyerRequest {
+  id: string;
+  buyerName: string;
+  cropType: string;
+  quantityKg: number;
+  location: string;
+  details: string;
+  createdAt: number;
+  responses: FarmerResponse[];
+}
+
+// --- Farm Finance Tracker Types ---
+export type TransactionType = 'income' | 'expense';
+
+export type ExpenseCategory = 'Seeds' | 'Fertilizer' | 'Pesticides' | 'Labor' | 'Equipment' | 'Transport' | 'Other';
+export type IncomeCategory = 'Marketplace Sale' | 'Local Sale' | 'Other';
+export type TransactionCategory = ExpenseCategory | IncomeCategory;
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  date: number; // Unix timestamp
+  description: string;
+  amount: number;
+  category: TransactionCategory;
+}
+
+export interface FinancialAnalysis {
+  netProfit: number;
+  totalIncome: number;
+  totalExpenses: number;
+  aiSummary: string;
 }

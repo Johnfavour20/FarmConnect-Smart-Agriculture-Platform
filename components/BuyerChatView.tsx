@@ -1,5 +1,6 @@
 import React from 'react';
-import type { Listing, ChatMessage } from '../types';
+// FIX: Import FarmerProfile type
+import type { Listing, ChatMessage, FarmerProfile } from '../types';
 import { ChatInterface } from './ChatInterface';
 import { LocationMarkerIcon, ArrowLeftIcon, ShoppingBagIcon, FarmerIcon } from './IconComponents';
 
@@ -10,6 +11,8 @@ interface BuyerChatViewProps {
   onSendMessage: (message: string) => void;
   onBack: () => void;
   onMakeOffer: () => void;
+  // FIX: Add farmerProfile prop to match usage in App.tsx
+  farmerProfile: FarmerProfile | null;
 }
 
 export const BuyerChatView: React.FC<BuyerChatViewProps> = ({
@@ -19,6 +22,7 @@ export const BuyerChatView: React.FC<BuyerChatViewProps> = ({
   onSendMessage,
   onBack,
   onMakeOffer,
+  farmerProfile,
 }) => {
   return (
     <div className="animate-fade-in">

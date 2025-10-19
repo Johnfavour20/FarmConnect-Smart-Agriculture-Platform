@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { FarmerProfile as FarmerProfileType, Post } from '../types';
-import { FarmerIcon, LocationMarkerIcon, UsersIcon } from './IconComponents';
+import { FarmerIcon, LocationMarkerIcon, UsersIcon, CameraIcon, UserCircleIcon } from './IconComponents';
 
 // A simplified PostCard for the profile view
 const ProfilePostCard: React.FC<{ post: Post }> = ({ post }) => {
@@ -38,7 +38,8 @@ const ProfilePostCard: React.FC<{ post: Post }> = ({ post }) => {
 
 interface FarmerProfileProps {
     profile: FarmerProfileType | null;
-    onSave: (profile: FarmerProfileType) => void;
+    // FIX: Update onSave signature to include image file
+    onSave: (profileData: Omit<FarmerProfileType, 'level' | 'xp' | 'profilePictureUrl'>, imageFile: File | null) => void;
     userPosts: Post[];
 }
 
@@ -48,12 +49,27 @@ export const FarmerProfile: React.FC<FarmerProfileProps> = ({ profile, onSave, u
         location: profile?.location || '',
         farmLocation: profile?.farmLocation || ''
     });
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(profile?.profilePictureUrl || null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const isEditing = !!profile;
     const sortedPosts = [...userPosts].sort((a, b) => b.createdAt - a.createdAt);
 
     const xpForNextLevel = profile ? profile.level * 100 : 100;
     const xpPercentage = profile ? (profile.xp / xpForNextLevel) * 100 : 0;
 
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+    
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -62,11 +78,8 @@ export const FarmerProfile: React.FC<FarmerProfileProps> = ({ profile, onSave, u
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.name.trim() && formData.location.trim()) {
-            onSave({
-                ...formData,
-                level: profile?.level || 1,
-                xp: profile?.xp || 0,
-            });
+            // FIX: Pass form data and image file separately
+            onSave(formData, imageFile);
         }
     };
 
@@ -92,6 +105,30 @@ export const FarmerProfile: React.FC<FarmerProfileProps> = ({ profile, onSave, u
                 </p>
 
                 <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto">
+                    <div className="flex justify-center mb-4">
+                        <div className="relative">
+                            {imagePreview ? (
+                                <img src={imagePreview} alt="Profile" className="w-24 h-24 rounded-full object-cover border-2 border-white shadow-md" />
+                            ) : (
+                                <UserCircleIcon className="w-24 h-24 text-slate-300" />
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="absolute bottom-0 right-0 bg-green-600 text-white rounded-full p-1.5 shadow-md hover:bg-green-700 transition-transform hover:scale-110"
+                                aria-label="Upload profile picture"
+                            >
+                                <CameraIcon className="w-4 h-4" />
+                            </button>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileChange}
+                                className="hidden"
+                                accept="image/*"
+                            />
+                        </div>
+                    </div>
                     <div>
                         <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">Your Name</label>
                         <div className="relative">

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import type { Listing } from '../types';
-import { MarketplaceIcon, LocationMarkerIcon, ChatBubbleIcon, FilterIcon, FarmerIcon } from './IconComponents';
+// FIX: Import FarmerProfile type
+import type { Listing, FarmerProfile } from '../types';
+import { MarketplaceIcon, LocationMarkerIcon, ChatBubbleIcon, FilterIcon, FarmerIcon, MegaphoneIcon } from './IconComponents';
 
 interface MarketplaceFeedProps {
     allListings: Listing[];
@@ -8,6 +9,11 @@ interface MarketplaceFeedProps {
     onContactFarmer: (listing: Listing) => void;
     filters: { cropType: string; location: string };
     onFilterChange: React.Dispatch<React.SetStateAction<{ cropType: string; location: string }>>;
+    onPostRequest: () => void;
+    // FIX: Add missing props for pagination and profile
+    visibleCount: number;
+    onLoadMore: () => void;
+    farmerProfile: FarmerProfile | null;
 }
 
 const FilterBar: React.FC<{
@@ -99,7 +105,7 @@ const ListingCard: React.FC<{ listing: Listing; onContact: () => void }> = ({ li
     );
 };
 
-export const MarketplaceFeed: React.FC<MarketplaceFeedProps> = ({ allListings, filteredListings, onContactFarmer, filters, onFilterChange }) => {
+export const MarketplaceFeed: React.FC<MarketplaceFeedProps> = ({ allListings, filteredListings, onContactFarmer, filters, onFilterChange, onPostRequest, visibleCount, onLoadMore, farmerProfile }) => {
     return (
         <div className="animate-fade-in">
              <div className="text-center mb-8">
@@ -112,16 +118,38 @@ export const MarketplaceFeed: React.FC<MarketplaceFeedProps> = ({ allListings, f
             {allListings.length > 0 ? (
                 <>
                     <FilterBar listings={allListings} filters={filters} onFilterChange={onFilterChange} />
+                     <div className="mb-8 bg-blue-50 border border-blue-200 text-center p-4 rounded-xl">
+                        <p className="text-sm text-blue-800 font-medium">Can't find what you're looking for?</p>
+                        <button 
+                            onClick={onPostRequest}
+                            className="mt-2 inline-flex items-center gap-2 bg-blue-600 text-white font-bold py-2 px-5 rounded-full text-sm shadow-md hover:bg-blue-700 transition-all transform hover:scale-105"
+                        >
+                            <MegaphoneIcon className="h-4 w-4"/>
+                            Post a Request
+                        </button>
+                    </div>
                     {filteredListings.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filteredListings.map(listing => (
-                                <ListingCard 
-                                    key={listing.id} 
-                                    listing={listing}
-                                    onContact={() => onContactFarmer(listing)}
-                                />
-                            ))}
-                        </div>
+                        <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {filteredListings.slice(0, visibleCount).map(listing => (
+                                    <ListingCard 
+                                        key={listing.id} 
+                                        listing={listing}
+                                        onContact={() => onContactFarmer(listing)}
+                                    />
+                                ))}
+                            </div>
+                            {filteredListings.length > visibleCount && (
+                                <div className="text-center mt-8">
+                                    <button
+                                        onClick={onLoadMore}
+                                        className="bg-green-600 text-white font-bold py-3 px-8 rounded-full text-lg shadow-lg hover:bg-green-700 transition-all duration-300 transform hover:scale-105"
+                                    >
+                                        Load More Listings
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     ) : (
                          <div className="text-center bg-white p-12 rounded-2xl shadow-lg border border-slate-200">
                             <h3 className="text-xl font-semibold text-slate-700">No Listings Found</h3>

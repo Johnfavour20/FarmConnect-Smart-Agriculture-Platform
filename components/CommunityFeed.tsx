@@ -143,7 +143,6 @@ const CreatePostForm: React.FC<CreatePostFormProps> = ({ onCreatePost, farmerPro
                             type="button"
                             onClick={() => { setImageFile(null); setImagePreview(null); if(fileInputRef.current) fileInputRef.current.value = ''; }}
                             className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center text-xs font-bold"
-                            // FIX: Changed aria-label to be a string to fix type error and restored button content.
                             aria-label="Remove image"
                         >
                            &times;
@@ -242,7 +241,7 @@ const PostCard: React.FC<{ post: Post, onReaction: () => void, onAddComment: (co
                     <p className="text-xs text-slate-500">{timeAgo(post.createdAt)}</p>
                 </div>
             </div>
-            <p className="my-3 text-slate-700 text-sm">{post.content}</p>
+            {post.content && <p className="my-3 text-slate-700 text-sm">{post.content}</p>}
             {post.isPoll && <PollDisplay post={post} onVote={onPollVote} farmerProfile={farmerProfile} />}
             {post.imageUrl && <img src={post.imageUrl} alt="Post content" className="mt-3 rounded-lg w-full max-h-80 object-cover" />}
             {post.tags && post.tags.length > 0 && (
@@ -278,10 +277,12 @@ interface CommunityFeedProps {
     farmerProfile: FarmerProfile;
     activeTag: string | null;
     onTagSelect: (tag: string | null) => void;
+    // FIX: Add missing props for pagination
+    visibleCount: number;
+    onLoadMore: () => void;
 }
 
-// FIX: Added export to fix import error in App.tsx
-export const CommunityFeed: React.FC<CommunityFeedProps> = ({ posts, filteredPosts, onCreatePost, onPostReaction, onAddComment, onPollVote, farmerProfile, activeTag, onTagSelect }) => {
+export const CommunityFeed: React.FC<CommunityFeedProps> = ({ posts, filteredPosts, onCreatePost, onPostReaction, onAddComment, onPollVote, farmerProfile, activeTag, onTagSelect, visibleCount, onLoadMore }) => {
     
     const allTags = useMemo(() => {
         const tagSet = new Set<string>();
@@ -312,7 +313,7 @@ export const CommunityFeed: React.FC<CommunityFeedProps> = ({ posts, filteredPos
 
             <div className="space-y-4">
                 {filteredPosts.length > 0 ? (
-                    filteredPosts.map(post => (
+                    filteredPosts.slice(0, visibleCount).map(post => (
                         <PostCard 
                             key={post.id} 
                             post={post}
@@ -332,6 +333,16 @@ export const CommunityFeed: React.FC<CommunityFeedProps> = ({ posts, filteredPos
                     </div>
                 )}
             </div>
+            {filteredPosts.length > visibleCount && (
+                <div className="text-center mt-6">
+                    <button
+                        onClick={onLoadMore}
+                        className="bg-green-600 text-white font-bold py-2 px-6 rounded-full text-sm shadow-md hover:bg-green-700 transition-colors"
+                    >
+                        Load More Posts
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
