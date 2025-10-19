@@ -160,8 +160,8 @@ export interface BuyerRequest {
 // --- Farm Finance Tracker Types ---
 export type TransactionType = 'income' | 'expense';
 
-export type ExpenseCategory = 'Seeds' | 'Fertilizer' | 'Pesticides' | 'Labor' | 'Equipment' | 'Transport' | 'Other';
-export type IncomeCategory = 'Marketplace Sale' | 'Local Sale' | 'Other';
+export type ExpenseCategory = 'Seeds' | 'Fertilizer' | 'Pesticides' | 'Labor' | 'Equipment' | 'Transport' | 'Savings Contribution' | 'Other';
+export type IncomeCategory = 'Marketplace Sale' | 'Local Sale' | 'Goal Withdrawal' | 'Other';
 export type TransactionCategory = ExpenseCategory | IncomeCategory;
 
 export interface Transaction {
@@ -171,6 +171,14 @@ export interface Transaction {
   description: string;
   amount: number;
   category: TransactionCategory;
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  createdAt: number;
 }
 
 export interface FinancialAnalysis {

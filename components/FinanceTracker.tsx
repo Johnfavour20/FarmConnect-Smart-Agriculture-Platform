@@ -1,16 +1,18 @@
 import React from 'react';
-import type { Transaction, FarmerProfile } from '../types';
-import { ArrowUpIcon, ArrowDownIcon, SparklesIcon, CurrencyDollarIcon, LightbulbIcon } from './IconComponents';
+import type { Transaction, FarmerProfile, SavingsGoal } from '../types';
+import { ArrowUpIcon, ArrowDownIcon, SparklesIcon, CurrencyDollarIcon, LightbulbIcon, TrophyIcon, PlusCircleIcon } from './IconComponents';
 import { Spinner } from './Spinner';
 
 interface FinanceTrackerProps {
     transactions: Transaction[];
+    savingsGoals: SavingsGoal[];
     farmerProfile: FarmerProfile;
     onAddTransaction: () => void;
+    onAddGoal: () => void;
+    onContributeToGoal: (goal: SavingsGoal) => void;
     financialAnalysis: string | null;
     isFinancialAnalysisLoading: boolean;
     onFetchFinancialAnalysis: () => void;
-    // FIX: Add missing props for pagination
     visibleCount: number;
     onLoadMore: () => void;
 }
@@ -49,6 +51,37 @@ const TransactionItem: React.FC<{ transaction: Transaction }> = ({ transaction }
     );
 };
 
+const SavingsGoalItem: React.FC<{ goal: SavingsGoal; onContribute: () => void; }> = ({ goal, onContribute }) => {
+    const progress = (goal.currentAmount / goal.targetAmount) * 100;
+    const isComplete = goal.currentAmount >= goal.targetAmount;
+
+    return (
+        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <div className="flex justify-between items-start">
+                <div>
+                    <p className="font-semibold text-sm text-slate-800">{goal.name}</p>
+                    <p className="text-xs text-slate-500">
+                        Saved ₦{goal.currentAmount.toLocaleString()} of ₦{goal.targetAmount.toLocaleString()}
+                    </p>
+                </div>
+                {!isComplete ? (
+                    <button onClick={onContribute} className="text-xs font-semibold text-white bg-green-600 px-3 py-1 rounded-full hover:bg-green-700">
+                        Contribute
+                    </button>
+                ) : (
+                    <span className="text-xs font-semibold text-green-700 bg-green-100 px-3 py-1 rounded-full">
+                        Completed!
+                    </span>
+                )}
+            </div>
+            <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
+                <div className="bg-green-600 h-2 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+            </div>
+        </div>
+    );
+};
+
+
 const formatMarkdown = (text: string) => {
     let html = text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -62,18 +95,20 @@ const formatMarkdown = (text: string) => {
     return { __html: html };
 };
 
-export const FinanceTracker: React.FC<FinanceTrackerProps> = ({ transactions, farmerProfile, onAddTransaction, financialAnalysis, isFinancialAnalysisLoading, onFetchFinancialAnalysis, visibleCount, onLoadMore }) => {
+export const FinanceTracker: React.FC<FinanceTrackerProps> = ({ transactions, savingsGoals, farmerProfile, onAddTransaction, onAddGoal, onContributeToGoal, financialAnalysis, isFinancialAnalysisLoading, onFetchFinancialAnalysis, visibleCount, onLoadMore }) => {
     const { totalIncome, totalExpenses, netProfit } = React.useMemo(() => {
         let income = 0;
         let expenses = 0;
         transactions.forEach(t => {
-            if (t.type === 'income') income += t.amount;
-            else expenses += t.amount;
+            if (t.type === 'income' && t.category !== 'Goal Withdrawal') income += t.amount;
+            else if (t.type === 'expense' && t.category !== 'Savings Contribution') expenses += t.amount;
         });
         return { totalIncome: income, totalExpenses: expenses, netProfit: income - expenses };
     }, [transactions]);
 
     const sortedTransactions = [...transactions].sort((a, b) => b.date - a.date);
+    const sortedGoals = [...savingsGoals].sort((a,b) => a.createdAt - b.createdAt);
+
 
     return (
         <div className="animate-fade-in space-y-6">
@@ -81,6 +116,28 @@ export const FinanceTracker: React.FC<FinanceTrackerProps> = ({ transactions, fa
                 <StatCard title="Total Income" value={`₦${totalIncome.toLocaleString()}`} color="green" />
                 <StatCard title="Total Expenses" value={`₦${totalExpenses.toLocaleString()}`} color="red" />
                 <StatCard title="Net Profit" value={`₦${netProfit.toLocaleString()}`} color={netProfit >= 0 ? 'green' : 'red'} />
+            </div>
+
+            <div className="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
+                <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-3">
+                        <TrophyIcon className="h-6 w-6 text-amber-500"/>
+                        <h3 className="text-lg font-bold text-slate-800">Savings Goals</h3>
+                    </div>
+                    <button 
+                        onClick={onAddGoal}
+                        className="flex items-center gap-1.5 bg-amber-500 text-white font-bold py-2 px-4 rounded-full text-sm shadow-md hover:bg-amber-600 transition-colors"
+                    >
+                        <PlusCircleIcon className="w-5 h-5"/> New Goal
+                    </button>
+                </div>
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                    {sortedGoals.length > 0 ? (
+                        sortedGoals.map(goal => <SavingsGoalItem key={goal.id} goal={goal} onContribute={() => onContributeToGoal(goal)} />)
+                    ) : (
+                        <p className="text-sm text-slate-500 text-center py-8">No savings goals yet. Create one to start saving for your next big purchase!</p>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

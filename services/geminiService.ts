@@ -176,10 +176,12 @@ export const getFinancialAnalysis = async (transactions: Transaction[], farmer: 
     Analyze this data and provide a "Profit Pulse" summary.
     Your analysis must be concise, helpful, and formatted in Markdown.
     
+    IMPORTANT: Transactions with the category 'Savings Contribution' are transfers to a savings goal and should NOT be treated as an operational expense when calculating profitability. Mentioning that the farmer is saving is a positive financial habit. Transactions with the category 'Goal Withdrawal' are funds moved back from savings, not operational income.
+
     Your summary MUST include:
-    1.  **Key Insight:** Identify the single most important financial takeaway. This could be their most profitable crop, their biggest expense category, or a comment on their overall profitability. Start this section with a lightbulb emoji💡.
+    1.  **Key Insight:** Identify the single most important financial takeaway. This could be their most profitable crop, their biggest expense category, or a comment on their overall profitability (excluding savings transfers). Start this section with a lightbulb emoji💡.
     2.  **Profitability Tip:** Provide one actionable suggestion to help them improve their net profit.
-    3.  **Expense Breakdown:** Briefly mention their top 1-2 expense categories.
+    3.  **Expense Breakdown:** Briefly mention their top 1-2 operational expense categories.
     
     Here is the transaction data (JSON format):
     ${JSON.stringify(transactions)}
@@ -429,7 +431,6 @@ export const routeUserQuery = async (
     } catch (e) {
         console.error("Error routing user query:", e);
         // Fallback to general advice on any routing error
-        // FIX: Corrected typo and removed file corruption.
         return await askAgronomist(prompt, null);
     }
 };

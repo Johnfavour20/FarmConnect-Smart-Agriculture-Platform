@@ -24,9 +24,11 @@ import { BuyerRequestsFeed } from './components/BuyerRequestsFeed';
 import { FarmerResponseModal } from './components/FarmerResponseModal';
 import { FinanceTracker } from './components/FinanceTracker';
 import { TransactionModal } from './components/TransactionModal';
+import { SavingsGoalModal } from './components/SavingsGoalModal';
+import { ContributeModal } from './components/ContributeModal';
 import { diagnoseCrop, initializeChatSession, initializeBuyerChatSession, initializeFarmerChatSession, getPriceSuggestion, askAgronomist, getMarketAnalysis, routeUserQuery, getFarmingAdviceForWeather, getWeatherForecastForLocation, getReminderSuggestion, getGrowthPlan, getFinancialAnalysis } from './services/geminiService';
 import { generateMockListings, generateMockTutorials, generateMockPosts } from './services/mockData';
-import type { Diagnosis, ChatMessage, Listing, UserRole, AllChats, Post, Comment, FarmerProfile as FarmerProfileType, AgronomistChatMessage, CopilotChatMessage, DailyForecast, WeatherAdvice, Tutorial, TutorialCategory, Reminder, PollOption, GrowthPlanTask, GrowthPlanTaskAction, BuyerRequest, FarmerResponse, Transaction } from './types';
+import type { Diagnosis, ChatMessage, Listing, UserRole, AllChats, Post, Comment, FarmerProfile as FarmerProfileType, AgronomistChatMessage, CopilotChatMessage, DailyForecast, WeatherAdvice, Tutorial, TutorialCategory, Reminder, PollOption, GrowthPlanTask, GrowthPlanTaskAction, BuyerRequest, FarmerResponse, Transaction, SavingsGoal } from './types';
 import { FarmerIcon, BuyerIcon, SparklesIcon } from './components/IconComponents';
 
 
@@ -133,6 +135,16 @@ const App: React.FC = () => {
     }
   });
 
+  const [allSavingsGoals, setAllSavingsGoals] = useState<SavingsGoal[]>(() => {
+    try {
+        const saved = localStorage.getItem('farmconnect_savings_goals');
+        return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+        console.error("Failed to parse savings goals from localStorage", error);
+        return [];
+    }
+  });
+
   const [buyerName, setBuyerName] = useState<string>(() => {
     return localStorage.getItem('farmconnect_buyer_name') || '';
   });
@@ -167,6 +179,10 @@ const App: React.FC = () => {
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState<boolean>(false);
   const [financialAnalysis, setFinancialAnalysis] = useState<string | null>(null);
   const [isFinancialAnalysisLoading, setIsFinancialAnalysisLoading] = useState<boolean>(false);
+  const [isSavingsGoalModalOpen, setIsSavingsGoalModalOpen] = useState(false);
+  const [isContributeModalOpen, setIsContributeModalOpen] = useState(false);
+  const [goalToContribute, setGoalToContribute] = useState<SavingsGoal | null>(null);
+
 
   // Weather State
   const [weatherAdvice, setWeatherAdvice] = useState<WeatherAdvice | null>(null);
@@ -250,6 +266,11 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('farmconnect_transactions', JSON.stringify(allTransactions));
   }, [allTransactions]);
+
+  // Persist savings goals to localStorage
+  useEffect(() => {
+    localStorage.setItem('farmconnect_savings_goals', JSON.stringify(allSavingsGoals));
+  }, [allSavingsGoals]);
 
   // Persist buyer name to localStorage
   useEffect(() => {
@@ -616,7 +637,6 @@ const App: React.FC = () => {
     }));
 };
 
-  // FIX: Updated function signature to match what the `FarmerProfile` component now provides.
   const handleSaveProfile = async (profileData: Omit<FarmerProfileType, 'level'|'xp'|'profilePictureUrl'>, imageFile: File | null) => {
     let profilePictureUrl = farmerProfile?.profilePictureUrl;
     if (imageFile) {
@@ -716,6 +736,45 @@ const App: React.FC = () => {
     };
     setAllTransactions(prev => [newTransaction, ...prev]);
     setIsTransactionModalOpen(false);
+  };
+
+  // Savings Goal Actions
+  const handleAddSavingsGoal = (name: string, targetAmount: number) => {
+    const newGoal: SavingsGoal = {
+        id: `goal_${Date.now()}`,
+        name,
+        targetAmount,
+        currentAmount: 0,
+        createdAt: Date.now()
+    };
+    setAllSavingsGoals(prev => [newGoal, ...prev]);
+    setIsSavingsGoalModalOpen(false);
+  };
+
+  const handleOpenContributeModal = (goal: SavingsGoal) => {
+      setGoalToContribute(goal);
+      setIsContributeModalOpen(true);
+  };
+
+  const handleContributeToGoal = (goalId: string, amount: number) => {
+      // Add to savings goal
+      setAllSavingsGoals(prev => prev.map(g => 
+          g.id === goalId ? { ...g, currentAmount: g.currentAmount + amount } : g
+      ));
+
+      // Create corresponding transaction
+      const goal = allSavingsGoals.find(g => g.id === goalId);
+      if (goal) {
+          handleAddTransaction({
+              type: 'expense',
+              date: Date.now(),
+              description: `Contribution to "${goal.name}" goal`,
+              amount: amount,
+              category: 'Savings Contribution'
+          });
+      }
+      setIsContributeModalOpen(false);
+      setGoalToContribute(null);
   };
 
   // Unified Chat Actions
@@ -861,7 +920,6 @@ const App: React.FC = () => {
 
   const renderFarmerContent = () => {
     if (!farmerProfile) {
-        // FIX: Pass correct arguments to `onSave` in the `FarmerProfile` component.
         return <FarmerProfile profile={null} onSave={handleSaveProfile} userPosts={[]} />;
     }
     
@@ -962,8 +1020,11 @@ const App: React.FC = () => {
        case 'finance':
             return <FinanceTracker
                 transactions={allTransactions}
+                savingsGoals={allSavingsGoals}
                 farmerProfile={farmerProfile}
                 onAddTransaction={() => setIsTransactionModalOpen(true)}
+                onAddGoal={() => setIsSavingsGoalModalOpen(true)}
+                onContributeToGoal={handleOpenContributeModal}
                 financialAnalysis={financialAnalysis}
                 isFinancialAnalysisLoading={isFinancialAnalysisLoading}
                 onFetchFinancialAnalysis={handleFetchFinancialAnalysis}
@@ -977,7 +1038,6 @@ const App: React.FC = () => {
                 onAsk={handleAskAgronomist}
             />;
        case 'profile':
-            // FIX: Pass correct arguments to `onSave` in the `FarmerProfile` component.
             return <FarmerProfile
                 profile={farmerProfile}
                 onSave={handleSaveProfile}
@@ -1144,6 +1204,21 @@ const App: React.FC = () => {
           <TransactionModal 
             onClose={() => setIsTransactionModalOpen(false)}
             onAddTransaction={handleAddTransaction}
+          />
+      )}
+
+      {isSavingsGoalModalOpen && (
+          <SavingsGoalModal
+              onClose={() => setIsSavingsGoalModalOpen(false)}
+              onAddGoal={handleAddSavingsGoal}
+          />
+      )}
+      
+      {isContributeModalOpen && goalToContribute && (
+          <ContributeModal
+              goal={goalToContribute}
+              onClose={() => setIsContributeModalOpen(false)}
+              onContribute={handleContributeToGoal}
           />
       )}
 
