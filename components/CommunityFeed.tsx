@@ -1,7 +1,8 @@
 
+
 import React, { useState, useRef, useMemo } from 'react';
 import type { Post, Comment, FarmerProfile, PollOption } from '../types';
-import { FarmerIcon, ImageIcon, UsersIcon, ChatBubbleIcon, SendIcon, PollIcon, LightbulbIcon, TagIcon, XIcon } from './IconComponents';
+import { FarmerIcon, ImageIcon, UsersIcon, ChatBubbleIcon, SendIcon, PollIcon, LightbulbIcon, TagIcon, XIcon, ShareIcon } from './IconComponents';
 
 // --- Helper Functions ---
 const timeAgo = (timestamp: number): string => {
@@ -230,6 +231,18 @@ const CommentSection: React.FC<{ post: Post, onAddComment: (commentData: Omit<Co
 
 const PostCard: React.FC<{ post: Post, onReaction: () => void, onAddComment: (commentData: Omit<Comment, 'id' | 'createdAt' | 'farmerName'>) => void, onPollVote: (optionIndex: number) => void, farmerProfile: FarmerProfile }> = ({ post, onReaction, onAddComment, onPollVote, farmerProfile }) => {
     const [showComments, setShowComments] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const handleShare = () => {
+        const url = `${window.location.origin}${window.location.pathname}?view=community&post_id=${post.id}`;
+        navigator.clipboard.writeText(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+        }, (err) => {
+            console.error('Could not copy text: ', err);
+        });
+    };
+
     return (
          <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-200">
             <div className="flex items-start gap-3">
@@ -259,6 +272,9 @@ const PostCard: React.FC<{ post: Post, onReaction: () => void, onAddComment: (co
                 </button>
                  <button onClick={() => setShowComments(!showComments)} className="flex-1 flex items-center justify-center gap-2 p-2 rounded-lg text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors">
                     <ChatBubbleIcon className="h-5 w-5" /> Comment
+                </button>
+                <button onClick={handleShare} className="flex-1 flex items-center justify-center gap-2 p-2 rounded-lg text-slate-600 hover:bg-green-50 hover:text-green-600 transition-colors">
+                    <ShareIcon className="h-5 w-5" /> {copied ? 'Copied!' : 'Share'}
                 </button>
             </div>
             {showComments && <CommentSection post={post} onAddComment={(commentData) => onAddComment(commentData)} />}
@@ -314,14 +330,15 @@ export const CommunityFeed: React.FC<CommunityFeedProps> = ({ posts, filteredPos
             <div className="space-y-4">
                 {filteredPosts.length > 0 ? (
                     filteredPosts.slice(0, visibleCount).map(post => (
-                        <PostCard 
-                            key={post.id} 
-                            post={post}
-                            onReaction={() => onPostReaction(post.id)}
-                            onAddComment={(commentData) => onAddComment(post.id, commentData)}
-                            onPollVote={(optionIndex) => onPollVote(post.id, optionIndex)}
-                            farmerProfile={farmerProfile}
-                        />
+                        <div id={`post-${post.id}`} key={post.id} className="scroll-mt-4">
+                            <PostCard 
+                                post={post}
+                                onReaction={() => onPostReaction(post.id)}
+                                onAddComment={(commentData) => onAddComment(post.id, commentData)}
+                                onPollVote={(optionIndex) => onPollVote(post.id, optionIndex)}
+                                farmerProfile={farmerProfile}
+                            />
+                        </div>
                     ))
                 ) : (
                     <div className="text-center bg-white p-12 rounded-2xl shadow-lg border border-slate-200">

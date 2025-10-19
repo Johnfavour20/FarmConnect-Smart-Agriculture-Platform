@@ -308,6 +308,40 @@ const App: React.FC = () => {
   useEffect(() => {
     setLearningHubContent(generateMockTutorials());
   }, []);
+  
+  // Handle deep linking to posts
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const postId = params.get('post_id');
+        const view = params.get('view');
+
+        if (userRole === 'farmer' && view === 'community' && postId) {
+            const postExists = allPosts.some(p => p.id === postId);
+            if (postExists) {
+                setFarmerView('community');
+                // Ensure the post is visible before trying to scroll
+                setVisibleCounts(prev => ({ ...prev, community: allPosts.length }));
+
+                setTimeout(() => {
+                    const postElement = document.getElementById(`post-${postId}`);
+                    if (postElement) {
+                        postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        postElement.classList.add('highlight-post');
+                        setTimeout(() => {
+                            postElement.classList.remove('highlight-post');
+                        }, 3000);
+                    }
+                }, 200); // Delay to allow rendering
+            }
+
+            // Clean up URL
+            const url = new URL(window.location.href);
+            url.searchParams.delete('post_id');
+            url.searchParams.delete('view');
+            window.history.replaceState({}, '', url.toString());
+        }
+    }, [userRole, allPosts]);
+
 
   const handleDiagnose = async () => {
     if (!imageFile) {
