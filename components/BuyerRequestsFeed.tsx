@@ -1,6 +1,6 @@
 import React from 'react';
 import type { BuyerRequest, FarmerProfile } from '../types';
-import { ClipboardListIcon, LocationMarkerIcon, UserCircleIcon } from './IconComponents';
+import { ClipboardListIcon, LocationMarkerIcon, UserCircleIcon, UserGroupIcon } from './IconComponents';
 
 const timeAgo = (timestamp: number): string => {
     const now = Date.now();
@@ -15,7 +15,7 @@ const timeAgo = (timestamp: number): string => {
     return `${days}d ago`;
 };
 
-const RequestCard: React.FC<{ request: BuyerRequest, onRespond: () => void, farmerProfile: FarmerProfile }> = ({ request, onRespond, farmerProfile }) => {
+const RequestCard: React.FC<{ request: BuyerRequest, onRespond: () => void; onFormCooperative: () => void; farmerProfile: FarmerProfile }> = ({ request, onRespond, onFormCooperative, farmerProfile }) => {
     const hasResponded = request.responses.some(r => r.farmerName === farmerProfile.name);
     
     return (
@@ -41,14 +41,23 @@ const RequestCard: React.FC<{ request: BuyerRequest, onRespond: () => void, farm
                  {request.details && <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-md mt-2">"{request.details}"</p>}
             </div>
              <div className="flex-shrink-0 flex sm:flex-col items-center justify-between sm:justify-start gap-2">
-                <button 
-                    onClick={onRespond}
-                    disabled={hasResponded}
-                    className="w-full sm:w-auto bg-green-600 text-white font-bold py-2.5 px-6 rounded-full text-center hover:bg-green-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
-                >
-                    {hasResponded ? 'Offer Sent' : 'Make Offer'}
-                </button>
-                 <span className="text-xs text-slate-500">{request.responses.length} offer(s) so far</span>
+                 <div className="flex sm:flex-col gap-2 w-full">
+                    <button 
+                        onClick={onRespond}
+                        disabled={hasResponded}
+                        className="w-full bg-green-600 text-white font-bold py-2.5 px-6 rounded-full text-center hover:bg-green-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed text-sm"
+                    >
+                        {hasResponded ? 'Offer Sent' : 'Make Offer'}
+                    </button>
+                    <button
+                        onClick={onFormCooperative}
+                        className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-2.5 px-4 rounded-full text-center hover:bg-blue-700 transition-colors text-sm"
+                        >
+                        <UserGroupIcon className="h-4 w-4" />
+                        Form Cooperative
+                    </button>
+                </div>
+                 <span className="text-xs text-slate-500 mt-1">{request.responses.length} offer(s) so far</span>
             </div>
         </div>
     );
@@ -57,10 +66,11 @@ const RequestCard: React.FC<{ request: BuyerRequest, onRespond: () => void, farm
 interface BuyerRequestsFeedProps {
     requests: BuyerRequest[];
     onRespond: (request: BuyerRequest) => void;
+    onFormCooperative: (request: BuyerRequest) => void;
     farmerProfile: FarmerProfile;
 }
 
-export const BuyerRequestsFeed: React.FC<BuyerRequestsFeedProps> = ({ requests, onRespond, farmerProfile }) => {
+export const BuyerRequestsFeed: React.FC<BuyerRequestsFeedProps> = ({ requests, onRespond, onFormCooperative, farmerProfile }) => {
     return (
         <div className="animate-fade-in space-y-6">
             {requests.length > 0 ? (
@@ -70,6 +80,7 @@ export const BuyerRequestsFeed: React.FC<BuyerRequestsFeedProps> = ({ requests, 
                             key={req.id} 
                             request={req}
                             onRespond={() => onRespond(req)}
+                            onFormCooperative={() => onFormCooperative(req)}
                             farmerProfile={farmerProfile}
                         />
                     ))}

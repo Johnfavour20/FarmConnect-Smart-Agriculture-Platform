@@ -23,7 +23,12 @@ import type {
   Transaction,
   SavingsGoal,
   FinancialAnalysis,
-  FinancialReportData
+  FinancialReportData,
+  CooperativePledge,
+  Order,
+  Wallet,
+  Payout,
+  PayoutStatus
 } from './types';
 
 // Import Components
@@ -47,6 +52,10 @@ import { BuyerRequestsFeed } from './components/BuyerRequestsFeed';
 import { FarmerResponseModal } from './components/FarmerResponseModal';
 import { FinanceTracker } from './components/FinanceTracker';
 import { FinancialReportModal } from './components/FinancialReportModal';
+import { CooperativeHub } from './components/CooperativeHub';
+import { InitiateCooperativeModal } from './components/InitiateCooperativeModal';
+import { JoinCooperativeModal } from './components/JoinCooperativeModal';
+import { WalletView } from './components/WalletView';
 
 
 // Buyer Components
@@ -62,7 +71,7 @@ import * as geminiService from './services/geminiService';
 import { generateMockListings, generateMockPosts, generateMockTutorials } from './services/mockData';
 import { LeafIcon } from './components/IconComponents';
 
-type ViewMode = 'scanner' | 'diagnosis' | 'listingForm' | 'listingSuccess' | 'dashboard' | 'farmerChat' | 'editListing' | 'profile' | 'community' | 'agronomist' | 'learningHub' | 'buyerRequestsFeed' | 'finance' | 'marketplace' | 'buyerChat' | 'purchaseSuccess' | 'postRequest';
+type ViewMode = 'scanner' | 'diagnosis' | 'listingForm' | 'listingSuccess' | 'dashboard' | 'farmerChat' | 'editListing' | 'profile' | 'community' | 'agronomist' | 'learningHub' | 'buyerRequestsFeed' | 'finance' | 'cooperativeHub' | 'wallet' | 'marketplace' | 'buyerChat' | 'purchaseSuccess' | 'postRequest';
 
 
 const App: React.FC = () => {
@@ -82,6 +91,7 @@ const App: React.FC = () => {
     const [allPosts, setAllPosts] = useState<Post[]>([]);
     const [allBuyerRequests, setAllBuyerRequests] = useState<BuyerRequest[]>([]);
     const [activeRequest, setActiveRequest] = useState<BuyerRequest | null>(null);
+    const [allOrders, setAllOrders] = useState<Order[]>([]);
 
     // --- Chat & AI State ---
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -124,6 +134,15 @@ const App: React.FC = () => {
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [financialReportData, setFinancialReportData] = useState<FinancialReportData | null>(null);
     const [isFinancialReportLoading, setIsFinancialReportLoading] = useState(false);
+    
+    // Wallet & Escrow State
+    const [farmerWallet, setFarmerWallet] = useState<Wallet>({ balance: 0, transactions: [] });
+    const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+
+
+    // Cooperative State
+    const [requestToCoop, setRequestToCoop] = useState<BuyerRequest | null>(null);
+    const [isPlanningLogistics, setIsPlanningLogistics] = useState(false);
 
 
     // Co-pilot State
@@ -359,7 +378,6 @@ const App: React.FC = () => {
 
     const handleFetchFinancialAnalysis = useCallback(async (periodTransactions: Transaction[], period: { month: string, year: number }) => {
         if (periodTransactions.length === 0) {
-            // FIX: Removed incorrect reduce call that was causing a type error and was unused.
             setFinancialAnalysis({
                 totalIncome: 0,
                 totalExpenses: 0,
@@ -404,7 +422,7 @@ const App: React.FC = () => {
         setIsFinancialReportLoading(true);
 
         // 1. Calculate stats
-        const { totalIncome, totalExpenses, netProfit, salesTransactions, months } = transactions.reduce((acc, t) => {
+        const { totalIncome, totalExpenses, salesTransactions, months } = transactions.reduce((acc, t) => {
             if (t.type === 'income') {
                 acc.totalIncome += t.amount;
                 acc.salesTransactions += 1;
@@ -414,7 +432,7 @@ const App: React.FC = () => {
             const monthYear = new Date(t.date).toLocaleString('default', { month: 'long', year: 'numeric' });
             acc.months.add(monthYear);
             return acc;
-        }, { totalIncome: 0, totalExpenses: 0, netProfit: 0, salesTransactions: 0, months: new Set<string>() });
+        }, { totalIncome: 0, totalExpenses: 0, salesTransactions: 0, months: new Set<string>() });
         
         const finalNetProfit = totalIncome - totalExpenses;
         const avgMonthlyIncome = months.size > 0 ? totalIncome / months.size : 0;
@@ -446,10 +464,160 @@ const App: React.FC = () => {
         }
 
     }, [farmerProfile, transactions]);
+    
+    // --- Cooperative Handlers ---
+    const handleInitiateCooperative = useCallback((requestId: string, quantity: number) => {
+        if (!farmerProfile) return;
+        setAllBuyerRequests(prev => prev.map(req => {
+            if (req.id === requestId) {
+                const newPledge: CooperativePledge = {
+                    farmerName: farmerProfile.name,
+                    farmerLocation: farmerProfile.farmLocation || farmerProfile.location,
+                    quantityKg: quantity
+                };
+                return {
+                    ...req,
+                    isCooperative: true,
+                    initiatingFarmer: farmerProfile.name,
+                    pledges: [newPledge],
+                };
+            }
+            return req;
+        }));
+        setRequestToCoop(null);
+        setView('cooperativeHub');
+    }, [farmerProfile]);
+
+    const handleJoinCooperative = useCallback((requestId: string, quantity: number) => {
+        if (!farmerProfile) return;
+        setAllBuyerRequests(prev => prev.map(req => {
+            if (req.id === requestId) {
+                const newPledge: CooperativePledge = {
+                    farmerName: farmerProfile.name,
+                    farmerLocation: farmerProfile.farmLocation || farmerProfile.location,
+                    quantityKg: quantity
+                };
+                return {
+                    ...req,
+                    pledges: [...(req.pledges || []), newPledge],
+                };
+            }
+            return req;
+        }));
+        setRequestToCoop(null);
+    }, [farmerProfile]);
+
+    const handlePlanLogistics = useCallback(async (requestId: string) => {
+        const request = allBuyerRequests.find(r => r.id === requestId);
+        if (!request || !request.pledges) return;
+        
+        setIsPlanningLogistics(true);
+        try {
+            const plan = await geminiService.getLogisticsPlan(request);
+            const chatId = `coop-${requestId}`;
+            setAllBuyerRequests(prev => prev.map(r => r.id === requestId ? {...r, logisticsPlan: plan, chatId: chatId} : r));
+            // Create a new group chat
+            setAllChats(prev => ({
+                ...prev,
+                [chatId]: [{
+                    role: 'model',
+                    content: `**Logistics Plan Generated!**\n\nHello everyone, here is the AI-generated plan for fulfilling the order for ${request.quantityKg}kg of ${request.cropType}.\n\n${plan}`
+                }]
+            }));
+        } catch(err) {
+            console.error("Failed to get logistics plan", err);
+            // Optionally, update the request with an error message
+            setAllBuyerRequests(prev => prev.map(r => r.id === requestId ? {...r, logisticsPlan: "Error: Could not generate a logistics plan. Please try again."} : r));
+        } finally {
+            setIsPlanningLogistics(false);
+        }
+    }, [allBuyerRequests]);
+    
+    // --- Secure Pay Handlers ---
+    const handleInitiatePurchase = useCallback((listing: Listing, quantity: number) => {
+        const newOrder: Order = {
+            id: `order-${Date.now()}`,
+            listingId: listing.id,
+            buyerName: buyerName,
+            farmerName: listing.farmerName,
+            cropType: listing.cropType,
+            quantityKg: quantity,
+            pricePerKg: listing.pricePerKg,
+            totalAmount: quantity * listing.pricePerKg,
+            status: 'Pending',
+            createdAt: Date.now(),
+        };
+        setAllOrders(prev => [...prev, newOrder]);
+        setActiveOrder(newOrder);
+        // Simulate funding the escrow
+        setTimeout(() => handleConfirmPayment(newOrder.id), 1000);
+        setView('purchaseSuccess');
+    }, [buyerName]);
+
+    const handleConfirmPayment = (orderId: string) => {
+        setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Funded' } : o));
+        // Find the related chat and post a system message
+        const order = allOrders.find(o => o.id === orderId);
+        if (order) {
+            const chatId = order.listingId;
+            const systemMessage: ChatMessage = {
+                role: 'model',
+                content: `**Payment Secured!**\nBuyer ${order.buyerName} has funded the escrow for ${order.quantityKg}kg of ${order.cropType}. You can now arrange for delivery.`
+            };
+             setAllChats(prev => ({
+                ...prev,
+                [chatId]: [...(prev[chatId] || []), systemMessage]
+            }));
+        }
+    };
+    
+    const handleConfirmDelivery = (orderId: string) => {
+        const order = allOrders.find(o => o.id === orderId);
+        if(!order || !farmerProfile) return;
+
+        setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Completed', completedAt: Date.now() } : o));
+
+        // Create income transaction for the farmer
+        const incomeTransaction: Transaction = {
+            id: `txn-${order.id}`,
+            type: 'income',
+            date: Date.now(),
+            description: `Sale of ${order.quantityKg}kg ${order.cropType} to ${order.buyerName}`,
+            amount: order.totalAmount,
+            category: 'Marketplace Sale'
+        };
+        setTransactions(prev => [incomeTransaction, ...prev]);
+        setFarmerWallet(prev => ({
+            balance: prev.balance + order.totalAmount,
+            transactions: [incomeTransaction, ...prev.transactions]
+        }));
+    };
+    
+    const handleWithdrawFunds = useCallback((amount: number, method: 'Bank Transfer' | 'Mobile Money', destination: string) => {
+        const newPayout: Payout = {
+            id: `payout-${Date.now()}`,
+            amount,
+            method,
+            destination,
+            status: 'Pending',
+            requestedAt: Date.now()
+        };
+        setFarmerWallet(prev => ({
+            balance: prev.balance - amount,
+            transactions: [newPayout, ...prev.transactions]
+        }));
+        // Simulate payout completion
+        setTimeout(() => {
+             setFarmerWallet(prev => ({
+                ...prev,
+                transactions: prev.transactions.map(t => t.id === newPayout.id ? {...t, status: 'Completed', completedAt: Date.now()} : t)
+            }))
+        }, 3000);
+
+    }, []);
 
     const handleContactFarmer = (listing: Listing) => {
         setActiveListing(listing);
-        // Load or initialize chat history
         const history = allChats[listing.id] || [{ role: 'model', content: `Hello! I'm ${buyerName}. I'm interested in your ${listing.cropType}.` }];
         setChatHistory(history);
         setView('buyerChat');
@@ -459,7 +627,6 @@ const App: React.FC = () => {
 
     const renderFarmerContent = () => {
         if (!farmerProfile) {
-            // FIX: Use aliased component name to resolve name collision.
             return <FarmerProfileComponent profile={null} onSave={handleSaveProfile} userPosts={[]} />;
         }
 
@@ -506,7 +673,6 @@ const App: React.FC = () => {
             case 'editListing':
                 return <EditListingForm listing={activeListing!} onUpdate={(updated) => { setAllListings(allListings.map(l => l.id === updated.id ? updated : l)); setView('dashboard');}} onCancel={() => setView('dashboard')} onGetPriceSuggestion={handleGetPriceSuggestion} priceSuggestion={priceSuggestion} isPriceSuggestionLoading={isPriceSuggestionLoading} priceSuggestionError={priceSuggestionError} onClearPriceSuggestion={() => setPriceSuggestion(null)} />;
             case 'profile':
-                // FIX: Use aliased component name to resolve name collision.
                 return <FarmerProfileComponent profile={farmerProfile} onSave={handleSaveProfile} userPosts={allPosts.filter(p => p.farmerName === farmerProfile.name)} />;
             case 'community':
                 const filteredPosts = communityActiveTag ? allPosts.filter(p => p.tags?.includes(communityActiveTag)) : allPosts;
@@ -528,7 +694,9 @@ const App: React.FC = () => {
             case 'learningHub':
                 return <LearningHub categories={tutorialCategories} onSelectTutorial={setSelectedTutorial} />;
             case 'buyerRequestsFeed':
-                return <BuyerRequestsFeed requests={allBuyerRequests} farmerProfile={farmerProfile} onRespond={(req) => { setActiveRequest(req); }} />;
+                return <BuyerRequestsFeed requests={allBuyerRequests} farmerProfile={farmerProfile} onRespond={(req) => { setActiveRequest(req); }} onFormCooperative={(req) => setRequestToCoop(req)} />;
+            case 'cooperativeHub':
+                return <CooperativeHub requests={allBuyerRequests} farmerProfile={farmerProfile} onJoinCooperative={(req) => setRequestToCoop(req)} onPlanLogistics={handlePlanLogistics} isPlanningLogistics={isPlanningLogistics} />;
             case 'finance':
                 const handleAddTransaction = (t: Omit<Transaction, 'id'>) => {
                     setTransactions(prev => [{ ...t, id: Date.now().toString() }, ...prev]);
@@ -559,6 +727,8 @@ const App: React.FC = () => {
                     isAnalysisLoading={isFinancialAnalysisLoading} 
                     onGenerateReport={handleGenerateFinancialReport}
                 />;
+            case 'wallet':
+                return <WalletView wallet={farmerWallet} onWithdraw={handleWithdrawFunds} />;
             default:
                 return <p>Unknown view</p>;
         }
@@ -591,10 +761,11 @@ const App: React.FC = () => {
                     isChatLoading={isChatLoading}
                     onSendMessage={handleSendMessage}
                     onBack={() => setView('marketplace')}
-                    onMakeOffer={() => setListingToBuy(activeListing!)}
+                    onInitiatePurchase={() => setListingToBuy(activeListing!)}
                     farmerProfile={null}
                 />
             case 'purchaseSuccess':
+                // This view might be deprecated in favor of the new order flow
                 return <PurchaseSuccess details={purchaseDetails!} onDone={() => setView('marketplace')} />;
 
             default:
@@ -651,16 +822,30 @@ const App: React.FC = () => {
                     }}
                 />
             )}
+             {requestToCoop && !requestToCoop.isCooperative && (
+                <InitiateCooperativeModal
+                    request={requestToCoop}
+                    onClose={() => setRequestToCoop(null)}
+                    onConfirm={handleInitiateCooperative}
+                />
+            )}
+            {requestToCoop && requestToCoop.isCooperative && (
+                <JoinCooperativeModal
+                    request={requestToCoop}
+                    onClose={() => setRequestToCoop(null)}
+                    onConfirm={handleJoinCooperative}
+                />
+            )}
             {listingToBuy && (
                 <PurchaseModal
                     listing={listingToBuy}
                     onClose={() => setListingToBuy(null)}
                     onConfirm={(listingId, quantity) => {
-                        // FIX: Create a new object for purchaseDetails without 'id' and 'imageUrl' to match the type definition.
-                        const { id, imageUrl, ...listingDetails } = listingToBuy!;
-                        setPurchaseDetails({ listing: listingDetails, quantity });
-                        setListingToBuy(null);
-                        setView('purchaseSuccess');
+                         const listing = allListings.find(l => l.id === listingId);
+                         if(listing) {
+                             handleInitiatePurchase(listing, quantity);
+                         }
+                         setListingToBuy(null);
                     }}
                 />
             )}
@@ -668,7 +853,7 @@ const App: React.FC = () => {
                 <PostRequestModal 
                     onClose={() => setIsPostingRequest(false)}
                     onPostRequest={(data, name) => {
-                         setBuyerName(name); // Save buyer name for future sessions
+                         setBuyerName(name);
                          const newRequest: BuyerRequest = { ...data, id: Date.now().toString(), createdAt: Date.now(), responses: [], buyerName: name };
                          setAllBuyerRequests(prev => [newRequest, ...prev]);
                          setIsPostingRequest(false);

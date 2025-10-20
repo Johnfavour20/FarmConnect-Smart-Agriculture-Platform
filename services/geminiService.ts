@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 // FIX: Added 'Post' to the type import to resolve a 'Cannot find name' error.
-import type { Diagnosis, ChatMessage, Listing, FarmerProfile, WeatherAdvice, Reminder, GrowthPlanTask, CopilotMessageContent, Transaction, Post } from '../types';
+import type { Diagnosis, ChatMessage, Listing, FarmerProfile, WeatherAdvice, Reminder, GrowthPlanTask, CopilotMessageContent, Transaction, Post, BuyerRequest } from '../types';
 
 // --- Helper Functions ---
 
@@ -239,6 +239,40 @@ export const getFinancialReportSummary = async (
         - Mention the consistent sales activity.
         - Conclude with a statement about their potential for growth with additional capital.
         - Do not use overly casual or emotional language. Maintain a professional and optimistic tone.
+    `;
+
+    const result = await ai.models.generateContent({
+        model: proModel,
+        contents: prompt
+    });
+
+    return result.text;
+};
+
+export const getLogisticsPlan = async (request: BuyerRequest): Promise<string> => {
+    const pledgesSummary = request.pledges?.map(p => `- ${p.farmerName} from ${p.farmerLocation} will provide ${p.quantityKg}kg.`).join('\n');
+
+    const prompt = `
+        You are an expert AI logistics coordinator for small-scale farmers in Nigeria. Your goal is to create the most efficient and cost-effective plan for consolidating produce from multiple farms and delivering it to a buyer.
+
+        **Order Details:**
+        - Buyer: ${request.buyerName}
+        - Buyer's Location: ${request.location}
+        - Total Quantity Required: ${request.quantityKg}kg of ${request.cropType}
+
+        **Participating Farmers (The Cooperative):**
+        ${pledgesSummary}
+
+        **Your Task:**
+        Generate a clear, step-by-step logistics plan in markdown format. The plan should be easy for farmers to understand and follow.
+
+        **Include the following sections:**
+        1.  **Suggested Collection Point:** Propose a logical, central town or landmark that minimizes travel for most farmers.
+        2.  **Pickup & Delivery Route:** Suggest an optimal route. You can either suggest a single driver picks up from all farms, or that farmers meet at the collection point. Choose the most practical option for rural Nigeria.
+        3.  **Estimated Cost & Cost Sharing:** Estimate a reasonable total cost for hiring a small truck or van for the delivery in Nigerian Naira (₦). Then, provide a fair cost-sharing breakdown for each farmer, proportional to the quantity they are contributing.
+        4.  **Coordination Tips:** Provide 2-3 brief, actionable tips for the farmers to ensure a smooth process (e.g., "Confirm pickup times via phone call," "Ensure produce is properly packaged for transport.").
+
+        Assume standard road conditions in Nigeria and provide realistic advice. Be encouraging and clear.
     `;
 
     const result = await ai.models.generateContent({

@@ -42,7 +42,7 @@ export interface Listing {
 export type UserRole = 'farmer' | 'buyer';
 
 export type AllChats = {
-  [listingId: string]: ChatMessage[];
+  [chatId: string]: ChatMessage[];
 };
 
 export interface Comment {
@@ -58,7 +58,7 @@ export type PollOption = {
 };
 
 export interface Post {
-  id: string;
+  id:string;
   farmerName: string;
   content: string;
   imageUrl?: string;
@@ -139,11 +139,17 @@ export interface GrowthPlanTask {
   xp: number;
 }
 
-// --- Buyer Request Board Types ---
+// --- Buyer Request Board & Cooperative Types ---
 export interface FarmerResponse {
   farmerName: string;
   listingId: string;
   createdAt: number;
+}
+
+export interface CooperativePledge {
+    farmerName: string;
+    farmerLocation: string;
+    quantityKg: number;
 }
 
 export interface BuyerRequest {
@@ -155,6 +161,12 @@ export interface BuyerRequest {
   details: string;
   createdAt: number;
   responses: FarmerResponse[];
+  // Cooperative Fields
+  isCooperative?: boolean;
+  initiatingFarmer?: string;
+  pledges?: CooperativePledge[];
+  logisticsPlan?: string;
+  chatId?: string;
 }
 
 // --- Farm Finance Tracker Types ---
@@ -197,4 +209,38 @@ export interface FinancialReportData {
     salesTransactions: number;
     largestIncomeTransactions: Transaction[];
     aiSummary: string;
+}
+
+// --- Secure Pay & Wallet Types ---
+export type OrderStatus = 'Pending' | 'Funded' | 'Delivered' | 'Completed' | 'Disputed' | 'Cancelled';
+
+export interface Order {
+    id: string;
+    listingId: string;
+    buyerName: string;
+    farmerName: string;
+    cropType: string;
+    quantityKg: number;
+    pricePerKg: number;
+    totalAmount: number;
+    status: OrderStatus;
+    createdAt: number;
+    completedAt?: number;
+}
+
+export type PayoutStatus = 'Pending' | 'Completed' | 'Failed';
+
+export interface Payout {
+    id: string;
+    amount: number;
+    method: 'Bank Transfer' | 'Mobile Money';
+    destination: string; // e.g., Account number or phone number
+    status: PayoutStatus;
+    requestedAt: number;
+    completedAt?: number;
+}
+
+export interface Wallet {
+    balance: number;
+    transactions: (Transaction | Payout)[]; // Simplified: can be refined
 }

@@ -2,7 +2,7 @@ import React from 'react';
 // FIX: Import FarmerProfile type
 import type { Listing, ChatMessage, FarmerProfile } from '../types';
 import { ChatInterface } from './ChatInterface';
-import { LocationMarkerIcon, ArrowLeftIcon, ShoppingBagIcon, FarmerIcon } from './IconComponents';
+import { LocationMarkerIcon, ArrowLeftIcon, ShoppingBagIcon, FarmerIcon, ShieldCheckIcon } from './IconComponents';
 
 interface BuyerChatViewProps {
   listing: Listing;
@@ -10,7 +10,7 @@ interface BuyerChatViewProps {
   isChatLoading: boolean;
   onSendMessage: (message: string) => void;
   onBack: () => void;
-  onMakeOffer: () => void;
+  onInitiatePurchase: () => void;
   // FIX: Add farmerProfile prop to match usage in App.tsx
   farmerProfile: FarmerProfile | null;
 }
@@ -21,7 +21,7 @@ export const BuyerChatView: React.FC<BuyerChatViewProps> = ({
   isChatLoading,
   onSendMessage,
   onBack,
-  onMakeOffer,
+  onInitiatePurchase,
   farmerProfile,
 }) => {
   return (
@@ -59,11 +59,11 @@ export const BuyerChatView: React.FC<BuyerChatViewProps> = ({
                 </div>
             </div>
              <button
-                onClick={onMakeOffer}
+                onClick={onInitiatePurchase}
                 className="w-full sm:w-auto mt-2 sm:mt-0 flex-shrink-0 flex items-center justify-center bg-blue-600 text-white font-bold py-2.5 px-6 rounded-full text-md shadow-md hover:bg-blue-700 transition-all duration-300 transform hover:scale-105"
             >
-                <ShoppingBagIcon className="h-5 w-5 mr-2" />
-                Make an Offer
+                <ShieldCheckIcon className="h-5 w-5 mr-2" />
+                Finalize & Pay
             </button>
         </div>
       </div>
