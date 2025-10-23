@@ -244,3 +244,16 @@ export interface Wallet {
     balance: number;
     transactions: (Transaction | Payout)[]; // Simplified: can be refined
 }
+
+// --- Loan & Grant Opportunities ---
+export interface LoanOpportunity {
+    id: string;
+    provider: string; // e.g., 'Bank of Agriculture', 'NIRSAL MFB'
+    type: 'Loan' | 'Grant';
+    title: string;
+    amount: string; // e.g., 'Up to ₦500,000'
+    interestRate: string; // e.g., '9% per annum' or 'N/A'
+    description: string;
+    eligibility: string[];
+    applicationQuestions: string[];
+}

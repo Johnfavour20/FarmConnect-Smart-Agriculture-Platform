@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 
 // Import Types
@@ -87,15 +88,16 @@ const App: React.FC = () => {
     const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
     const [allListings, setAllListings] = useState<Listing[]>([]);
     const [activeListing, setActiveListing] = useState<Listing | null>(null);
-    const [allChats, setAllChats] = useState<AllChats>({});
     const [allPosts, setAllPosts] = useState<Post[]>([]);
     const [allBuyerRequests, setAllBuyerRequests] = useState<BuyerRequest[]>([]);
     const [activeRequest, setActiveRequest] = useState<BuyerRequest | null>(null);
     const [allOrders, setAllOrders] = useState<Order[]>([]);
 
     // --- Chat & AI State ---
-    const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-    const [isChatLoading, setIsChatLoading] = useState(false);
+    const [diagnosisChatHistory, setDiagnosisChatHistory] = useState<ChatMessage[]>([]);
+    const [isDiagnosisChatLoading, setIsDiagnosisChatLoading] = useState(false);
+    const [allChats, setAllChats] = useState<AllChats>({});
+    const [isMarketplaceChatLoading, setIsMarketplaceChatLoading] = useState(false);
     const [agronomistChatHistory, setAgronomistChatHistory] = useState<AgronomistChatMessage[]>([]);
     const [isAgronomistChatLoading, setIsAgronomistChatLoading] = useState(false);
     
@@ -196,7 +198,7 @@ const App: React.FC = () => {
         setImageFile(null);
         setDiagnosis(null);
         setError(null);
-        setChatHistory([]);
+        setDiagnosisChatHistory([]);
         setView('scanner');
     }, []);
 
@@ -216,7 +218,7 @@ const App: React.FC = () => {
         try {
             const result = await geminiService.diagnoseCrop(imageFile);
             setDiagnosis(result);
-            setChatHistory([{ role: 'model', content: "I've analyzed your image. What other questions do you have about this diagnosis?" }]);
+            setDiagnosisChatHistory([{ role: 'model', content: "I've analyzed your image. What other questions do you have about this diagnosis?" }]);
             setView('diagnosis');
         } catch (err) {
             setError('Failed to get diagnosis. Please try again.');
@@ -226,18 +228,44 @@ const App: React.FC = () => {
         }
     }, [imageFile]);
 
-    const handleSendMessage = useCallback(async (message: string) => {
-        setChatHistory(prev => [...prev, { role: 'user', content: message }]);
-        setIsChatLoading(true);
+    const handleDiagnosisMessage = useCallback(async (message: string) => {
+        setDiagnosisChatHistory(prev => [...prev, { role: 'user', content: message }]);
+        setIsDiagnosisChatLoading(true);
         try {
-            const response = await geminiService.continueChat(chatHistory, message);
-            setChatHistory(prev => [...prev, { role: 'model', content: response }]);
+            const response = await geminiService.continueChat(diagnosisChatHistory, message);
+            setDiagnosisChatHistory(prev => [...prev, { role: 'model', content: response }]);
         } catch (err) {
-            setChatHistory(prev => [...prev, { role: 'model', content: "I'm sorry, I encountered an error. Please try again." }]);
+            setDiagnosisChatHistory(prev => [...prev, { role: 'model', content: "I'm sorry, I encountered an error. Please try again." }]);
         } finally {
-            setIsChatLoading(false);
+            setIsDiagnosisChatLoading(false);
         }
-    }, [chatHistory]);
+    }, [diagnosisChatHistory]);
+
+    const handleMarketplaceMessage = useCallback((chatId: string, message: string) => {
+        const userMessage: ChatMessage = { role: userRole === 'buyer' ? 'user' : 'model', content: message };
+        
+        const currentHistory = allChats[chatId] || [];
+        const updatedHistory = [...currentHistory, userMessage];
+        setAllChats(prev => ({ ...prev, [chatId]: updatedHistory }));
+
+        setIsMarketplaceChatLoading(true);
+        setTimeout(() => {
+            const responseContent = userRole === 'buyer' 
+                ? `Yes, the ${activeListing?.cropType} is still available. How many kg do you need?`
+                : `I need about 20kg. Is the price negotiable?`;
+            
+            const responseMessage: ChatMessage = {
+                role: userRole === 'buyer' ? 'model' : 'user',
+                content: responseContent
+            };
+            
+            setAllChats(prev => ({
+                ...prev,
+                [chatId]: [...updatedHistory, responseMessage]
+            }));
+            setIsMarketplaceChatLoading(false);
+        }, 1500);
+    }, [allChats, userRole, activeListing]);
 
     const handleGetPriceSuggestion = useCallback(async (cropType: string, location: string) => {
         setIsPriceSuggestionLoading(true);
@@ -555,20 +583,23 @@ const App: React.FC = () => {
     }, [buyerName]);
 
     const handleConfirmPayment = (orderId: string) => {
-        setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Funded' } : o));
-        // Find the related chat and post a system message
-        const order = allOrders.find(o => o.id === orderId);
-        if (order) {
-            const chatId = order.listingId;
-            const systemMessage: ChatMessage = {
-                role: 'model',
-                content: `**Payment Secured!**\nBuyer ${order.buyerName} has funded the escrow for ${order.quantityKg}kg of ${order.cropType}. You can now arrange for delivery.`
-            };
-             setAllChats(prev => ({
-                ...prev,
-                [chatId]: [...(prev[chatId] || []), systemMessage]
-            }));
-        }
+        setAllOrders(prevOrders => {
+            const newOrders = prevOrders.map(o => o.id === orderId ? { ...o, status: 'Funded' } : o);
+            
+            const fundedOrder = newOrders.find(o => o.id === orderId);
+            if (fundedOrder) {
+                const chatId = fundedOrder.listingId;
+                const systemMessage: ChatMessage = {
+                    role: 'model',
+                    content: `**Payment Secured!**\nBuyer ${fundedOrder.buyerName} has funded the escrow for ${fundedOrder.quantityKg}kg of ${fundedOrder.cropType}. You can now arrange for delivery.`
+                };
+                setAllChats(prevChats => ({
+                    ...prevChats,
+                    [chatId]: [...(prevChats[chatId] || []), systemMessage]
+                }));
+            }
+            return newOrders;
+        });
     };
     
     const handleConfirmDelivery = (orderId: string) => {
@@ -618,8 +649,12 @@ const App: React.FC = () => {
 
     const handleContactFarmer = (listing: Listing) => {
         setActiveListing(listing);
-        const history = allChats[listing.id] || [{ role: 'model', content: `Hello! I'm ${buyerName}. I'm interested in your ${listing.cropType}.` }];
-        setChatHistory(history);
+        if (!allChats[listing.id]) {
+            setAllChats(prev => ({
+                ...prev,
+                [listing.id]: [{ role: 'model', content: `You are now chatting with ${listing.farmerName} about their ${listing.cropType}.` }]
+            }));
+        }
         setView('buyerChat');
     };
 
@@ -634,7 +669,7 @@ const App: React.FC = () => {
             case 'scanner':
                 return <CropScanner onImageSelect={handleImageSelect} onDiagnose={handleDiagnose} isLoading={isLoading} error={error} imageFile={imageFile} />;
             case 'diagnosis':
-                return <DiagnosisResult diagnosis={diagnosis!} imageFile={imageFile} onReset={resetScanner} onListProduce={() => setView('listingForm')} onAddReminder={handleAddReminder} chatHistory={chatHistory} isChatLoading={isChatLoading} onSendMessage={handleSendMessage} />;
+                return <DiagnosisResult diagnosis={diagnosis!} imageFile={imageFile} onReset={resetScanner} onListProduce={() => setView('listingForm')} onAddReminder={handleAddReminder} chatHistory={diagnosisChatHistory} isChatLoading={isDiagnosisChatLoading} onSendMessage={handleDiagnosisMessage} />;
             case 'listingForm':
                 return <MarketplaceListingForm diagnosis={diagnosis!} imageFile={imageFile!} onPublish={handlePublishListing} onCancel={resetScanner} farmerProfile={farmerProfile} onGetPriceSuggestion={handleGetPriceSuggestion} priceSuggestion={priceSuggestion} isPriceSuggestionLoading={isPriceSuggestionLoading} priceSuggestionError={priceSuggestionError} onClearPriceSuggestion={() => setPriceSuggestion(null)} />;
             case 'listingSuccess':
@@ -669,7 +704,7 @@ const App: React.FC = () => {
                     onNavigate={handleNavigate}
                 />;
             case 'farmerChat':
-                return <FarmerChatView listing={activeListing!} chatHistory={allChats[activeListing!.id] || []} isChatLoading={isChatLoading} onSendMessage={() => {}} onBack={() => setView('dashboard')} farmerProfile={farmerProfile}/>;
+                return <FarmerChatView listing={activeListing!} chatHistory={allChats[activeListing!.id] || []} isChatLoading={isMarketplaceChatLoading} onSendMessage={(message) => handleMarketplaceMessage(activeListing!.id, message)} onBack={() => setView('dashboard')} farmerProfile={farmerProfile}/>;
             case 'editListing':
                 return <EditListingForm listing={activeListing!} onUpdate={(updated) => { setAllListings(allListings.map(l => l.id === updated.id ? updated : l)); setView('dashboard');}} onCancel={() => setView('dashboard')} onGetPriceSuggestion={handleGetPriceSuggestion} priceSuggestion={priceSuggestion} isPriceSuggestionLoading={isPriceSuggestionLoading} priceSuggestionError={priceSuggestionError} onClearPriceSuggestion={() => setPriceSuggestion(null)} />;
             case 'profile':
@@ -757,9 +792,9 @@ const App: React.FC = () => {
             case 'buyerChat':
                 return <BuyerChatView 
                     listing={activeListing!}
-                    chatHistory={chatHistory}
-                    isChatLoading={isChatLoading}
-                    onSendMessage={handleSendMessage}
+                    chatHistory={allChats[activeListing!.id] || []}
+                    isChatLoading={isMarketplaceChatLoading}
+                    onSendMessage={(message) => handleMarketplaceMessage(activeListing!.id, message)}
                     onBack={() => setView('marketplace')}
                     onInitiatePurchase={() => setListingToBuy(activeListing!)}
                     farmerProfile={null}

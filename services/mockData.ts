@@ -1,4 +1,4 @@
-import type { Listing, TutorialCategory, Post, Comment, PollOption } from '../types';
+import type { Listing, TutorialCategory, Post, Comment, PollOption, LoanOpportunity } from '../types';
 
 const CROP_TYPES = ['Cassava', 'Maize (Yellow)', 'Tomato (Roma)', 'Yam (Puna)', 'Bell Peppers', 'Onions (Red)', 'Okra', 'Plantain', 'Watermelon', 'Ginger', 'Garlic', 'Sweet Potato', 'Cabbage', 'Carrots'];
 const LOCATIONS = ['Ikeja, Lagos', 'Abeokuta, Ogun', 'Ibadan, Oyo', 'Kano, Kano', 'Enugu, Enugu', 'Port Harcourt, Rivers', 'Jos, Plateau', 'Kaduna, Kaduna', 'Benin City, Edo', 'Onitsha, Anambra', 'Zaria, Kaduna', 'Warri, Delta'];
@@ -179,6 +179,56 @@ export const generateMockTutorials = (): TutorialCategory[] => {
                 { id: "shi1", title: "Introduction to Composting", description: "Turn your farm waste into 'black gold'. This tutorial covers the basics of setting up and maintaining a compost pile.", duration: "13:00", thumbnailUrl: "https://source.unsplash.com/400x300/?compost,soil" },
                 { id: "shi2", title: "Simple Drip Irrigation", description: "Learn how to build a simple and efficient drip irrigation system to conserve water and deliver it directly to your plants' roots.", duration: "16:45", thumbnailUrl: "https://source.unsplash.com/400x300/?drip,irrigation" },
                 { id: "shi3", title: "Testing Your Soil's pH", description: "A simple guide to testing your soil's pH level using common household materials and what the results mean for your crops.", duration: "7:15", thumbnailUrl: "https://source.unsplash.com/400x300/?soil,test" },
+            ]
+        },
+    ];
+};
+
+export const generateMockOpportunities = (): LoanOpportunity[] => {
+    return [
+        {
+            id: 'boa1',
+            provider: 'Bank of Agriculture',
+            type: 'Loan',
+            title: 'Smallholder Farmer Loan',
+            amount: 'Up to ₦500,000',
+            interestRate: '9% per annum',
+            description: 'A micro-loan designed to help smallholder farmers purchase quality inputs like seeds, fertilizer, and small equipment.',
+            eligibility: ['Must be a registered farmer.', 'Minimum of 1 year of farming experience.', 'Must have a verifiable farm location.'],
+            applicationQuestions: [
+                "What is the primary purpose of this loan?",
+                "How will this loan help increase your farm's productivity or income?",
+                "Briefly describe your farming experience.",
+            ]
+        },
+        {
+            id: 'agragrant1',
+            provider: 'AGRA Foundation',
+            type: 'Grant',
+            title: 'Youth in Agriculture Grant',
+            amount: '₦250,000',
+            interestRate: 'N/A',
+            description: 'A grant to support young farmers (under 35) who are implementing innovative or sustainable farming practices.',
+            eligibility: ['Must be between 18 and 35 years old.', 'Must be practicing sustainable farming (e.g., organic, irrigation).', 'Must submit a plan for use of funds.'],
+             applicationQuestions: [
+                "Describe the innovative or sustainable practice you are using on your farm.",
+                "How will you use the ₦250,000 grant to improve or expand this practice?",
+                "What is your vision for your farm in the next two years?",
+            ]
+        },
+        {
+            id: 'nirsal1',
+            provider: 'NIRSAL Microfinance Bank',
+            type: 'Loan',
+            title: 'AGSMEIS Loan Scheme',
+            amount: 'Up to ₦1,000,000',
+            interestRate: '5% per annum',
+            description: 'A government-backed loan for Agri-Business, Small and Medium Enterprises to support expansion and value addition.',
+            eligibility: ['Must have completed the mandatory training by a NIRSAL MFB approved EDI.', 'Must provide a business plan.', 'Must have a clean credit record.'],
+            applicationQuestions: [
+                "Provide a brief summary of your business plan and its objectives.",
+                "How will this loan contribute to job creation or value addition in your community?",
+                "Explain your plan for repaying the loan within the specified timeframe.",
             ]
         },
     ];

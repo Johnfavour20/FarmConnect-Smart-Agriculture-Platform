@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 // FIX: Added 'Post' to the type import to resolve a 'Cannot find name' error.
-import type { Diagnosis, ChatMessage, Listing, FarmerProfile, WeatherAdvice, Reminder, GrowthPlanTask, CopilotMessageContent, Transaction, Post, BuyerRequest } from '../types';
+import type { Diagnosis, ChatMessage, Listing, FarmerProfile, WeatherAdvice, Reminder, GrowthPlanTask, CopilotMessageContent, Transaction, Post, BuyerRequest, FinancialReportData } from '../types';
 
 // --- Helper Functions ---
 
@@ -276,6 +276,47 @@ export const getLogisticsPlan = async (request: BuyerRequest): Promise<string> =
     `;
 
     const result = await ai.models.generateContent({
+        model: proModel,
+        contents: prompt
+    });
+
+    return result.text;
+};
+
+
+export const generateApplicationAnswer = async (
+    question: string, 
+    userNotes: string, 
+    profile: FarmerProfile, 
+    financials: FinancialReportData | null
+): Promise<string> => {
+    const prompt = `
+        You are an expert assistant helping a Nigerian farmer named ${profile.name} apply for an agricultural loan/grant. 
+        Their goal is to improve their farm.
+        The farmer has provided some simple notes in response to an application question. 
+        Your task is to convert their notes into a clear, professional, and persuasive answer suitable for a formal application.
+
+        **Farmer's Profile:**
+        - Name: ${profile.name}
+        - Location: ${profile.location}
+        - Farm Location: ${profile.farmLocation}
+        - Level/Experience: ${profile.level}
+
+        **Farmer's Financial Summary:**
+        - Total Income: ₦${financials?.totalIncome.toLocaleString() || 'N/A'}
+        - Net Profit: ₦${financials?.netProfit.toLocaleString() || 'N/A'}
+        - Sales Transactions: ${financials?.salesTransactions || 'N/A'}
+
+        **Application Question:** "${question}"
+
+        **Farmer's Notes:** "${userNotes}"
+
+        Based on all this information, generate a concise, positive, and well-structured answer to the application question (2-4 sentences). 
+        Address the question directly, use a professional tone, and subtly incorporate details from the farmer's profile and financials to add credibility.
+        Do not just repeat the notes; expand on them professionally.
+    `;
+
+     const result = await ai.models.generateContent({
         model: proModel,
         contents: prompt
     });
